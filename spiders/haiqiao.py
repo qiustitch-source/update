@@ -125,23 +125,26 @@ class HaiqiaoSpider:
         latest_info = ""
         
         # --- 辅助函数：标准化日期格式 ---
-        def standardize_date(date_str, base_year=2026): 
+        def standardize_date(date_str, base_year=None):
             if not date_str:
                 return ""
             date_str = date_str.strip()
-            
+
             # 1. 如果已经是 YYYY-MM-DD 格式，直接返回
             if re.match(r"^\d{4}-\d{2}-\d{2}$", date_str):
                 return date_str
-                
+
             # 2. 处理 M.D 或 MM.DD 格式 (例如 7.29)
             match = re.match(r"^(\d{1,2})[.\-/](\d{1,2})", date_str)
             if match:
                 month, day = int(match.group(1)), int(match.group(2))
-                # 简单校验
                 if 1 <= month <= 12 and 1 <= day <= 31:
+                    year = base_year or datetime.now().year
                     try:
-                        dt = datetime(base_year, month, day)
+                        dt = datetime(year, month, day)
+                        # 如果解析出的日期距今超过90天在未来，说明是去年的日期
+                        if (dt - datetime.now()).days > 90:
+                            dt = datetime(year - 1, month, day)
                         return dt.strftime("%Y-%m-%d")
                     except ValueError:
                         pass
@@ -151,7 +154,7 @@ class HaiqiaoSpider:
         found_latest = False # 标记是否已找到最新物流
 
         # 获取当前年份（基于开船时间或排舱时间），用于处理 ETA 的年份
-        current_year = 2026
+        current_year = datetime.now().year
         for item in node_list:
             if "已离港" in item or "已排舱" in item:
                 date_match = re.search(r"20\d{2}", item)

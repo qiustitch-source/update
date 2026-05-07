@@ -25,7 +25,19 @@ class DingTalkRobot:
         return token
 
     def send_private_message(self, user_id, content):
-        """给指定用户发送单聊 Markdown 消息"""
+        """给指定用户发送单聊 Markdown 消息，Token 过期时自动刷新重试"""
+        result = self._do_send(user_id, content)
+        # 如果返回 token 过期错误，刷新后重试一次
+        if result.get('code') and str(result.get('code')) in ('40014', '42001', 'InvalidAuthentication'):
+            logger.info("钉钉 Token 已过期，正在刷新...")
+            self.token = self._get_token()
+            result = self._do_send(user_id, content)
+        if result.get('code') and result.get('code') != '0':
+            logger.error(f"钉钉消息发送失败: {result}")
+        return result
+
+    def _do_send(self, user_id, content):
+        """实际发送请求"""
         url = "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend"
         headers = {
             'x-acs-dingtalk-access-token': self.token,
@@ -40,12 +52,8 @@ class DingTalkRobot:
                 "text": content
             })
         }
-
         response = requests.post(url, json=payload, headers=headers)
-        result = response.json()
-        if result.get('code') and result.get('code') != '0':
-            logger.error(f"钉钉消息发送失败: {result}")
-        return result
+        return response.json()
 
 
 def main():

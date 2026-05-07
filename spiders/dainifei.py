@@ -67,7 +67,6 @@ class DainifeiSpider:
             line = line.strip()
             # 简单的分割：假设格式是 "关键词 时间"
             # 这里使用正则表达式来稳健地分离中文关键词和后面的时间
-            import re
             # 匹配：开头任意字符(非贪婪) + 结尾的日期格式(如 2026-01-01 或 2026/01/01)
             match = re.match(r'(.*?)\s*(\d{4}[-/]\d{1,2}[-/]\d{1,2})', line)
             if match:

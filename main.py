@@ -138,19 +138,18 @@ def process_crawlers(bot=None):
                     logger.warning(f"未知货代类型: {fw_name}，跳过。")
                     continue
 
-                cred = CREDENTIALS.get(fw_name)
-                if cred is None:
-                    logger.error(f"错误：在配置(CREDENTIALS)中未找到货代 [{fw_name}] 的账号信息")
-                    continue
+                cred = CREDENTIALS.get(fw_name, {})
+                username = cred.get('user')
+                password = cred.get('pwd')
 
                 context = browser.new_context()
                 page = context.new_page()
 
                 try:
                     if fw_name == '纽酷':
-                        spider = spider_cls(username=cred.get('user'), password=cred.get('pwd'))
+                        spider = spider_cls(username=username, password=password)
                     else:
-                        spider = spider_cls(page, cred.get('user'), cred.get('pwd'))
+                        spider = spider_cls(page, username, password)
 
                     spider.login()
 
@@ -222,63 +221,31 @@ def send_notifications(us_list, others, inspections, delations, bot=None):
     if bot is None:
         bot = DingTalkRobot(DINGTALK_CONFIG['app_key'], DINGTALK_CONFIG['app_secret'], DINGTALK_CONFIG['robot_code'])
 
-    # 1. 美国站点延期汇总
+    # 1. 美国站点汇总发送
     if us_list:
-        id_list = "\n".join([f"- {sid}" for sid in us_list])
-        msg = (
-            f"## 📌 US 站点延期预警\n"
-            f"---\n"
-            f"**延期超过5天的货件共 {len(us_list)} 个**\n"
-            f"{id_list}\n"
-            f"---\n"
-            f"*请尽快跟进处理*"
-        )
+        msg = f"### 📌 US 站点异常提醒\n\n**当前有 {len(us_list)} 个异常货件（延期>5天）：**\n📦 {', '.join(us_list)}"
         for user_id in US_SITE_MANAGER:
             bot.send_private_message(user_id, msg)
 
-    # 2. 其他站点延期汇总 (按负责人聚合)
+    # 2. 其他站点异常汇总 (按负责人聚合)
     for manager, ids in others.items():
         user_id = MANAGER_MAPPING.get(manager)
         if user_id:
-            id_list = "\n".join([f"- {sid}" for sid in ids])
-            msg = (
-                f"## ⚠️ 延期提醒 - {manager}\n"
-                f"---\n"
-                f"您负责的以下 **{len(ids)}** 个货件已延期超过5天：\n"
-                f"{id_list}\n"
-                f"---\n"
-                f"*请及时跟进处理*"
-            )
+            msg = f"### ⚠️ 延期提醒 - {manager}\n\n您负责的以下货件已延期超过5天：\n{'- ' + '- '.join(ids)}"
             bot.send_private_message(user_id, msg)
 
     # 3. 查验提醒汇总 (按负责人聚合)
     for manager, ids in inspections.items():
         user_id = MANAGER_MAPPING.get(manager)
         if user_id:
-            id_list = "\n".join([f"- {sid}" for sid in ids])
-            msg = (
-                f"## 🔍 查验提醒 - {manager}\n"
-                f"---\n"
-                f"以下 **{len(ids)}** 个货件已被海关查验，请重点关注：\n"
-                f"{id_list}\n"
-                f"---\n"
-                f"*查验可能影响时效，请及时处理*"
-            )
+            msg = f"### 🔍 查验提醒 - {manager}\n\n以下货件已被查验，请重点关注：\n{'- ' + '- '.join(ids)}"
             bot.send_private_message(user_id, msg)
 
     # 4. 延误提醒汇总 (按负责人聚合)
     for manager, ids in delations.items():
         user_id = MANAGER_MAPPING.get(manager)
         if user_id:
-            id_list = "\n".join([f"- {sid}" for sid in ids])
-            msg = (
-                f"## 🚧 延误提醒 - {manager}\n"
-                f"---\n"
-                f"以下 **{len(ids)}** 个货件存在延误情况：\n"
-                f"{id_list}\n"
-                f"---\n"
-                f"*请及时处理，避免进一步延误*"
-            )
+            msg = f"### 🚧 延误提醒 - {manager}\n\n以下货件存在延误情况，请及时处理：\n{'- ' + '- '.join(ids)}"
             bot.send_private_message(user_id, msg)
 
 if __name__ == "__main__":
@@ -292,7 +259,7 @@ if __name__ == "__main__":
     process_crawlers(bot=bot)
 
     us_list, others, inspections, delations = analyze_logistics_exceptions()
-    send_notifications(us_list, others, inspections, delations, bot=bot)
+    # send_notifications(us_list, others, inspections, delations, bot=bot)
 
     # 数据写回 Excel
     read_and_update_excel(FILE_PATHS['main_excel'], '发货数据详情')

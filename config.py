@@ -6,6 +6,35 @@ from dotenv import load_dotenv
 # 加载 .env 文件
 load_dotenv()
 
+
+def validate_config():
+    """启动时校验关键配置项是否存在"""
+    errors = []
+
+    # 数据库必填项
+    required_db = {
+        "DB_HOST": DB_CONFIG["host"],
+        "DB_PASSWORD": DB_CONFIG["password"],
+    }
+    for name, val in required_db.items():
+        if not val:
+            errors.append(f"缺少必填配置: {name}")
+
+    # 钉钉必填项
+    for name, val in DINGTALK_CONFIG.items():
+        env_key = f"DINGTALK_{name.upper()}"
+        if not val:
+            errors.append(f"缺少必填配置: {env_key}")
+
+    # 主 Excel 路径
+    if not FILE_PATHS.get("main_excel"):
+        errors.append("缺少必填配置: MAIN_EXCEL_PATH")
+
+    if errors:
+        msg = "配置校验失败，请检查 .env 文件:\n" + "\n".join(f"  - {e}" for e in errors)
+        raise SystemExit(msg)
+
+
 # 数据库配置
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -23,9 +52,15 @@ DINGTALK_CONFIG = {
 }
 
 # 业务逻辑解析
-# 使用 json.loads 将字符串解析为 Python 字典/列表
-MANAGER_MAPPING = json.loads(os.getenv("MANAGER_MAPPING", "{}"))
-US_SITE_MANAGER = json.loads(os.getenv("US_SITE_MANAGER", "[]"))
+try:
+    MANAGER_MAPPING: dict = json.loads(os.getenv("MANAGER_MAPPING") or "{}")
+except json.JSONDecodeError as e:
+    raise ValueError(f"配置项 MANAGER_MAPPING 的 JSON 格式有误: {e}")
+
+try:
+    US_SITE_MANAGER: list = json.loads(os.getenv("US_SITE_MANAGER") or "[]")
+except json.JSONDecodeError as e:
+    raise ValueError(f"配置项 US_SITE_MANAGER 的 JSON 格式有误: {e}")
 
 # 爬虫账号配置
 CREDENTIALS = {
@@ -57,3 +92,5 @@ FILE_PATHS = {
     "oujie": os.getenv("OUJIE_FILE_PATH"),
     "main_excel": os.getenv("MAIN_EXCEL_PATH")
 }
+
+validate_config()

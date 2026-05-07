@@ -92,8 +92,6 @@ def read_and_update_excel(EXCEL_FILE, SHEET_NAME):
                     else:
                         df.at[idx, df_col] = db_data[db_field]
 
-    del df
-    time.sleep(1)
 
     # 4. 写回 Excel
     output_file = EXCEL_FILE

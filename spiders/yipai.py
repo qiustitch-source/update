@@ -167,10 +167,7 @@ class YiPaiSpider:
             # 2. 定位第一个结果表格中的行
             rows = self.page.locator("table").first.locator("tbody tr").all()
             if not rows:
-                return {"trace": "未找到轨迹数据", "latest_info": "无轨迹", "status": "无数据"}
-
-            # 等待数据加载
-            self.page.wait_for_timeout(2000)
+                return {"trace": "未找到轨迹数据", "latest_info": "", "status": ""}
 
             trace_data = []
             sail_time = ""
@@ -209,10 +206,10 @@ class YiPaiSpider:
                 result_text = "\n".join(trace_data)
                 sail_time, arrive_time, sign_time, is_inspected = self.extract_logistics_info(result_text)
                 status = "签收" if sign_time else "在途"
-                lastest_info = "Done" if status == "签收" else (trace_data[0]+ "————（" + datetime.now().strftime('%Y-%m-%d') + "）" if trace_data else "")
+                latest_info = "Done" if status == "签收" else (trace_data[0]+ "————（" + datetime.now().strftime('%Y-%m-%d') + "）" if trace_data else "")
                 return {
                     "trace": result_text,
-                    "latest_info": lastest_info,
+                    "latest_info": latest_info,
                     "sail_time": sail_time,
                     "arrive_time": arrive_time,
                     "sign_time": sign_time,
@@ -221,11 +218,11 @@ class YiPaiSpider:
                     "status": status
                 }
             else:
-                return {"trace": "未找到轨迹数据", "latest_info": "无轨迹", "status": "无数据"}
+                return {"trace": "未找到轨迹数据", "latest_info": "", "status": ""}
 
         except Exception as e:
             print(f"查询 {tracking_no} 出错: {e}")
-            return {"error": str(e), "trace": "", "latest_info": ""}
+            return None
 
 def main():
     # --- 第一步：加载 .env 文件 ---
