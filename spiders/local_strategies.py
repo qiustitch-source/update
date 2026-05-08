@@ -1,11 +1,18 @@
 import pandas as pd
 import os
-import logging
 import re
 import openpyxl
 from datetime import datetime, timedelta
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class LocalExcelStrategy:
+    """本地 Excel 策略类：用于辰舟、欧杰等货代的数据查询
+    直接读取本地 Excel 文件，通过 FBA ID 或发货 ID 进行匹配
+    """
     def __init__(self, file_path, forwarder_name, sheet_name=0):
         """
         :param file_path: Excel 文件路径
@@ -21,7 +28,7 @@ class LocalExcelStrategy:
     def load_data(self):
         """加载本地 Excel 文件到内存"""
         if not self.file_path or not os.path.exists(self.file_path):
-            logging.error(f"[{self.forwarder_name}] 本地文件不存在: {self.file_path}")
+            logger.error(f"[{self.forwarder_name}] 本地文件不存在: {self.file_path}")
             return
         
         try:
@@ -38,9 +45,9 @@ class LocalExcelStrategy:
                 if 'ID' in col or '单号' in col or '号' in col:
                      self.df[col] = self.df[col].astype(str).str.replace(r'\.0$', '', regex=True).str.strip()
             
-            logging.info(f"[{self.forwarder_name}] 成功加载本地数据: {len(self.df)} 条 (Sheet: {self.sheet_name})")
+            logger.info(f"[{self.forwarder_name}] 成功加载本地数据: {len(self.df)} 条 (Sheet: {self.sheet_name})")
         except Exception as e:
-            logging.error(f"[{self.forwarder_name}] 读取文件失败: {e}")
+            logger.error(f"[{self.forwarder_name}] 读取文件失败: {e}")
 
     def search_order(self, task_info):
         """
@@ -191,7 +198,7 @@ class LocalExcelStrategy:
             
             return date_str
         except Exception as e:
-            logging.warning(f"日期解析失败: {date_val}, 错误: {e}")
+            logger.warning(f"日期解析失败: {date_val}, 错误: {e}")
             return str(date_val)
         
     def check_cell_color(self, sheet_name, cell_address):
@@ -214,7 +221,7 @@ class LocalExcelStrategy:
         # 注意：Excel 颜色通常带 Alpha 通道（前两位），如 FFFFFFFF
         current_color = fill.start_color.index
         
-        print(f"单元格 {cell_address} 的当前颜色代码为: {current_color}")
+        logger.debug(f"单元格 {cell_address} 的当前颜色代码为: {current_color}")
         
         if current_color == 'FFFFFF00':  # 黄色
             return True

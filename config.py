@@ -1,4 +1,8 @@
 # config.py
+# 配置中心模块
+# 功能：从 .env 文件加载所有配置项，包括数据库、钉钉、爬虫账号、文件路径等
+# 所有敏感信息都存储在 .env 文件中，通过此模块统一加载和校验
+
 import os
 import json
 from dotenv import load_dotenv
@@ -8,7 +12,9 @@ load_dotenv()
 
 
 def validate_config():
-    """启动时校验关键配置项是否存在"""
+    """启动时校验关键配置项是否存在
+    检查数据库、钉钉、主 Excel 路径等必填配置，如果缺失则抛出异常终止程序
+    """
     errors = []
 
     # 数据库必填项

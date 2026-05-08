@@ -1,3 +1,8 @@
+# excel_handler.py
+# Excel 数据回写模块
+# 功能：从数据库查询最新数据，写回 Excel 文件的指定列
+# 写入列映射：AY(ETD), AZ(妥投), BC(状态), BD(备注), BE(ETA), BL(船名), BG(查验)
+
 import logging
 import pandas as pd
 import psycopg2
@@ -10,12 +15,19 @@ from config import DB_CONFIG, FILE_PATHS
 logger = logging.getLogger(__name__)
 
 def clean_value(val):
-    """通用的空值处理"""
+    """通用的空值处理
+    将数据库中的 None 值转换为空字符串，其他值转为字符串并去除首尾空格
+    """
     if pd.isna(val) or val is None:
         return ''
     return str(val).strip()
 
 def read_and_update_excel(EXCEL_FILE, SHEET_NAME):
+    """读取 Excel 并更新数据库中的最新数据
+    1. 从 Excel 读取所有发货 ID
+    2. 查询数据库获取最新数据
+    3. 使用 openpyxl 将数据写回 Excel 的指定列
+    """
     logger.info("正在读取 Excel 文件...")
     df = None
     try:

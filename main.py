@@ -1,4 +1,7 @@
 # main.py
+# 物流追踪自动化项目 - 主入口文件
+# 功能：编排整个物流追踪流程，包括数据导入、爬虫调度、异常分析、通知推送、数据回写
+
 import json
 import logging
 import pandas as pd
@@ -28,6 +31,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # 爬虫映射表：建立货代名称与对应类的映射，方便工厂模式调用
+# 注意：纽酷（NiuKuSpider）是 API 模式，不继承 BaseSpider，在 main.py 中有特殊处理逻辑
 SPIDER_FACTORY = {
     '袋你飞': DainifeiSpider,
     '海桥': HaiqiaoSpider,
@@ -38,7 +42,10 @@ SPIDER_FACTORY = {
 }
 
 def clean_excel_data(val, is_bool=False):
-    """统一的数据清洗工具函数"""
+    """统一的数据清洗工具函数
+    将 Excel 中的各种空值（NaN, None, 空字符串等）统一处理为 Python None
+    对于布尔字段，支持中文"是/否"和英文"yes/no/true/false"等多种格式
+    """
     if pd.isna(val) or str(val).lower() in ['nan', 'nat', 'none', '']:
         return None
 
@@ -49,7 +56,9 @@ def clean_excel_data(val, is_bool=False):
     return val
 
 def load_excel_to_db(file_path):
-    """读取 Excel 数据并入库（批量操作）"""
+    """读取 Excel 数据并入库（批量操作）
+    从指定的 Excel 文件中读取"发货数据详情" sheet，清洗后批量写入数据库
+    """
     logger.info(f"正在读取主 Excel 文件: {file_path}")
     try:
         df = pd.read_excel(file_path, sheet_name='发货数据详情', header=1)
@@ -87,7 +96,15 @@ def load_excel_to_db(file_path):
         logger.error(f"Excel 导入数据库失败: {e}")
 
 def process_crawlers(bot=None):
-    """使用工厂模式的核心爬虫调度逻辑"""
+    """使用工厂模式的核心爬虫调度逻辑
+    1. 从数据库获取待处理任务（未签收且有货运单号）
+    2. 按货代名称分组
+    3. 对每组任务：
+       - 辰舟/欧杰：使用本地 Excel 策略
+       - 纽酷：使用 API 模式（不继承 BaseSpider）
+       - 其他：使用 Playwright 浏览器自动化
+    4. 每个查询结果更新到数据库
+    """
     tasks = get_pending_tasks()
     if not tasks:
         logger.info("暂无待查询任务。")
@@ -157,7 +174,12 @@ def process_crawlers(bot=None):
         browser.close()
 
 def analyze_logistics_exceptions():
-    """异常货件统计与分类逻辑"""
+    """异常货件统计与分类逻辑
+    检测三类异常：
+    1. 延期：当前日期 - ETA > 5 天（US 站单独统计，其他站按负责人分组）
+    2. 查验：is_inspected == True（按负责人分组）
+    3. 延误：latest_info 包含"延误"、"延迟"或"延至"（按负责人分组）
+    """
     logger.info("\n>>> 开始进行物流异常数据分析...")
 
     tasks = get_pending_tasks()
@@ -206,7 +228,11 @@ def analyze_logistics_exceptions():
     return us_exception_list, other_exceptions, inspections, delations
 
 def send_notifications(us_list, others, inspections, delations, bot=None):
-    """聚合发送消息推送"""
+    """聚合发送消息推送
+    将异常分析结果通过钉钉机器人发送给相关负责人：
+    - US 站异常：发给 US_SITE_MANAGER 列表中的所有用户
+    - 其他站点延期/查验/延误：通过 MANAGER_MAPPING 查找负责人钉钉 ID 发送
+    """
     if bot is None:
         bot = DingTalkRobot(DINGTALK_CONFIG['app_key'], DINGTALK_CONFIG['app_secret'], DINGTALK_CONFIG['robot_code'])
 
@@ -248,7 +274,7 @@ if __name__ == "__main__":
     process_crawlers(bot=bot)
 
     us_list, others, inspections, delations = analyze_logistics_exceptions()
-    # send_notifications(us_list, others, inspections, delations, bot=bot)
+    send_notifications(us_list, others, inspections, delations, bot=bot)
 
     # 数据写回 Excel
     read_and_update_excel(FILE_PATHS['main_excel'], '发货数据详情')

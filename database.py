@@ -1,3 +1,7 @@
+# database.py
+# 数据库操作模块：负责 PostgreSQL 数据库的建表、数据导入、查询和更新
+# 使用 psycopg2 连接数据库，支持批量操作和事务管理
+
 import logging
 import psycopg2
 from psycopg2.extras import DictCursor
@@ -8,7 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_connection():
-    """获取数据库连接"""
+    """获取数据库连接
+    创建并返回一个 PostgreSQL 数据库连接，设置客户端编码为 UTF-8
+    """
     conn = psycopg2.connect(**DB_CONFIG)
     conn.set_client_encoding('UTF8')
     return conn
@@ -127,7 +133,10 @@ def batch_upsert_shipments(data_list):
         conn.close()
 
 def get_pending_tasks():
-    """获取需要爬取的任务 (status != '签收')"""
+    """获取需要爬取的任务
+    查询条件：status != '签收' AND tracking_no IS NOT NULL AND latest_info != 'Done'
+    返回所有未签收且有货运单号的货件列表
+    """
     conn = get_connection()
     cur = conn.cursor(cursor_factory=DictCursor)
 
@@ -140,7 +149,10 @@ def get_pending_tasks():
     return rows
 
 def _status_changed(new_info, old_info):
-    """判断物流状态是否真正发生变化"""
+    """判断物流状态是否真正发生变化
+    按 '————' 分隔符取第一段（去掉时间戳部分）进行对比
+    如果不同且新值不为空 → 视为变更
+    """
     if not new_info:
         return False
     if old_info is None:
@@ -150,7 +162,11 @@ def _status_changed(new_info, old_info):
     return new_status != old_status
 
 def update_tracking_info(shipment_id, result, bot=None):
-    """爬虫爬完后，更新数据库（仅更新有值的字段）"""
+    """爬虫爬完后，更新数据库（仅更新有值的字段）
+    1. 查询数据库中该货件的当前状态
+    2. 对比新旧状态，如果发生变化则发送钉钉通知
+    3. 更新数据库中所有有值的字段
+    """
     conn = get_connection()
     cur = conn.cursor()
 
@@ -187,7 +203,7 @@ def update_tracking_info(shipment_id, result, bot=None):
                         f"*请及时关注物流动态*"
                     )
                     logger.info(f"发送钉钉消息给 {manager_name} ({user_id}): {msg}")
-                    # bot.send_private_message(user_id, msg)
+                    bot.send_private_message(user_id, msg)
                 else:
                     logger.warning(f"未找到负责人 {manager_name} 对应的钉钉 ID")
 

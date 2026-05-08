@@ -1,9 +1,17 @@
+# base_spider.py
+# 爬虫抽象基类
+# 定义了所有 Playwright 爬虫的通用接口：login、search、search_with_retry、safe_wait
+# 所有基于 Playwright 的爬虫（袋你飞、海桥、心达、丛林鸟、易派）都应继承此类
+
 from playwright.sync_api import Page
 import logging
 
 logger = logging.getLogger(__name__)
 
 class BaseSpider:
+    """爬虫抽象基类：定义通用接口和重试机制
+    所有基于 Playwright 的爬虫都应继承此类并实现 login() 和 search() 方法
+    """
     def __init__(self, page: Page, username: str = "", password: str = ""):
         self.page = page
         self.username = username
@@ -19,7 +27,9 @@ class BaseSpider:
         raise NotImplementedError("子类必须实现 search 方法")
 
     def search_with_retry(self, tracking_no: str, max_retries: int = 3):
-        """带重试的查询，失败时自动重试"""
+        """带重试的查询，失败时自动重试
+        默认重试 3 次，每次重试会记录日志
+        """
         for attempt in range(max_retries):
             try:
                 result = self.search(tracking_no)
