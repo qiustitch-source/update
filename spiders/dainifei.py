@@ -2,21 +2,20 @@
 import os
 from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
-from playwright.sync_api import Page
 import time
 import re
 from datetime import datetime
 
-class DainifeiSpider:
-    def __init__(self, page: Page, username, password):
-        self.page = page
-        self.username = username
-        self.password = password
-        self.is_logged_in = False
+from spiders.base_spider import BaseSpider
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+class DainifeiSpider(BaseSpider):
     def login(self):
         """执行登录逻辑"""
-        print("正在登录袋你飞...")
+        logger.info("正在登录袋你飞...")
         self.page.goto("https://dainifei.vastfreight.com/#/passport/login")
         self.page.get_by_role("textbox", name="用户名或邮箱").fill(self.username)
         self.page.get_by_role("textbox", name="密码").fill(self.password)
@@ -25,10 +24,10 @@ class DainifeiSpider:
         # 简单判断是否登录成功 (等待某个登录后才有的元素出现)
         try:
             self.page.wait_for_selector("text=状态追踪", timeout=10000)
-            print("登录成功")
+            logger.info("登录成功")
             self.is_logged_in = True
         except:
-            print("登录失败，请检查账号密码")
+            logger.warning("登录失败，请检查账号密码")
     
     @staticmethod
     def extract_latest_logistics_info(raw_text):
@@ -105,7 +104,7 @@ class DainifeiSpider:
         if not self.is_logged_in:
             return None
 
-        print(f"正在查询: {tracking_no}")
+        logger.info(f"正在查询: {tracking_no}")
         try:
             # 导航到查询页
             self.page.locator("a").filter(has_text="状态追踪").click()
@@ -127,7 +126,7 @@ class DainifeiSpider:
                 voyage_info = sv_locator.inner_text().strip()
                 voyage_info = '' if voyage_info == '-' else voyage_info
             except Exception as e:
-                print(f"船名航次提取失败: {e}")
+                logger.warning(f"船名航次提取失败: {e}")
 
             # 2. 提取轨迹信息 
             trace_text = ""
@@ -143,7 +142,7 @@ class DainifeiSpider:
             except Exception as e:
                 trace_text = ""
                 latest_info = ""
-                print(f"轨迹提取失败: {e}")
+                logger.warning(f"轨迹提取失败: {e}")
 
             # --- 判断状态 ---
             # 如果签收时间不为空，则为"已签收"，否则为"在途"
@@ -163,7 +162,7 @@ class DainifeiSpider:
             }
 
         except Exception as e:
-            print(f"查询 {tracking_no} 出错: {e}")
+            logger.error(f"查询 {tracking_no} 出错: {e}")
             return None
         
 def main():

@@ -8,7 +8,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 
 # 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class NiuKuSpider:
     def __init__(self, page=None, username='J12970B', password='WJ123'):
@@ -48,10 +48,10 @@ class NiuKuSpider:
         token, ts = self._get_cached_token()
         if token and (time.time() - ts) < 24 * 60 * 60:
             self.token = token
-            logging.info("使用纽酷缓存 Token 成功")
+            logger.info("使用纽酷缓存 Token 成功")
             return True
 
-        logging.info(f"正在登录纽酷账号: {self.username}")
+        logger.info(f"正在登录纽酷账号: {self.username}")
         try:
             # 纽酷接口对请求头有时有校验，建议补全
             headers = {'Content-Type': 'application/json'}
@@ -67,16 +67,16 @@ class NiuKuSpider:
                 # 确保 token 路径正确，部分接口可能直接在 data 下或 data['token']
                 self.token = data.get('data', {}).get('token')
                 if not self.token:
-                    logging.error(f"登录响应成功但未找到 Token: {data}")
+                    logger.error(f"登录响应成功但未找到 Token: {data}")
                     return False
                 self._cache_token(self.token)
-                logging.info("纽酷登录成功并缓存 Token")
+                logger.info("纽酷登录成功并缓存 Token")
                 return True
             else:
-                logging.error(f"纽酷登录失败。响应内容: {data}")
+                logger.error(f"纽酷登录失败。响应内容: {data}")
                 return False
         except Exception as e:
-            logging.error(f"纽酷登录接口异常: {e}")
+            logger.error(f"纽酷登录接口异常: {e}")
             return False
     def search(self, tracking_no):
         """
@@ -87,7 +87,7 @@ class NiuKuSpider:
             if not self.login():
                 return {"error": "登录失败", "status": "无权限"}
 
-        logging.info(f"正在查询纽酷单号: {tracking_no}")
+        logger.info(f"正在查询纽酷单号: {tracking_no}")
         try:
             headers = {'token': self.token, 'Content-Type': 'application/json'}
 
@@ -136,7 +136,7 @@ class NiuKuSpider:
             }
 
         except Exception as e:
-            logging.error(f"查询纽酷单号 {tracking_no} 出错: {e}")
+            logger.error(f"查询纽酷单号 {tracking_no} 出错: {e}")
             return {"error": str(e), "trace": "", "latest_info": "查询失败"}
 
     def _parse_tracks(self, response_json):

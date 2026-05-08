@@ -4,7 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class BaseSpider:
-    def __init__(self, page: Page, username=None, password=None):
+    def __init__(self, page: Page, username: str = "", password: str = ""):
         self.page = page
         self.username = username
         self.password = password

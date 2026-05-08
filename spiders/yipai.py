@@ -4,25 +4,28 @@ import re
 import time
 from datetime import datetime
 from dotenv import load_dotenv
-from playwright.sync_api import sync_playwright, Page, Playwright
+from playwright.sync_api import sync_playwright
+
+from spiders.base_spider import BaseSpider
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-class YiPaiSpider:
-    def __init__(self, page: Page, username=None, password=None):
-        self.page = page
-        self.username = username
-        self.password = password
+class YiPaiSpider(BaseSpider):
+    def __init__(self, page, username=None, password=None):
+        super().__init__(page, username, password)
         self.is_logged_in = True
-
         self.page.goto("http://47.112.210.220:8082/trackIndex.htm")
 
     def login(self):
         """该网站无需登录，等待查询输入框加载即可。"""
         try:
             self.page.wait_for_selector("textarea#cno", timeout=10000)
-            print("E-Express 查询页面已加载")
+            logger.info("E-Express 查询页面已加载")
         except Exception as e:
-            print(f"页面加载失败: {e}")
+            logger.error(f"页面加载失败: {e}")
 
     @staticmethod
     def extract_logistics_info(log_text):
@@ -157,7 +160,7 @@ class YiPaiSpider:
         return sail_time, arrive_time, sign_time, is_inspected
 
     def search(self, tracking_no):
-        print(f"正在查询 E-Express 单号: {tracking_no}")
+        logger.info(f"正在查询 E-Express 单号: {tracking_no}")
         try:
             # 1. 填入单号并搜索
             self.page.fill("textarea#cno", tracking_no)
@@ -197,7 +200,7 @@ class YiPaiSpider:
                             # trace_data.append({"date": date_text, "record": record_text})
 
                     except Exception as e:
-                        print(f"提取某行数据时出错: {e}")
+                        logger.warning(f"提取某行数据时出错: {e}")
                         continue
 
             # 4. 格式化结果
@@ -221,7 +224,7 @@ class YiPaiSpider:
                 return {"trace": "未找到轨迹数据", "latest_info": "", "status": ""}
 
         except Exception as e:
-            print(f"查询 {tracking_no} 出错: {e}")
+            logger.error(f"查询 {tracking_no} 出错: {e}")
             return None
 
 def main():
@@ -229,8 +232,8 @@ def main():
     # load_dotenv() # 该网站无需账号，不需要加载
 
     # --- 第二步：配置参数 ---
-    username = None
-    password = None
+    username = ""
+    password = ""
     headless = True # 默认 False 方便观察
 
     print(f"ℹ️ 正在初始化 E-Express 爬虫...")

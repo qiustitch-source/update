@@ -12,7 +12,17 @@ class DingTalkRobot:
         self.app_key = app_key
         self.app_secret = app_secret
         self.robot_code = robot_code
-        self.token = self._get_token()
+        self._token = None
+
+    @property
+    def token(self):
+        if self._token is None:
+            self._token = self._get_token()
+        return self._token
+
+    @token.setter
+    def token(self, value):
+        self._token = value
 
     def _get_token(self):
         """获取 Access Token"""

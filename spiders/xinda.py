@@ -4,19 +4,19 @@ import time
 from dotenv import load_dotenv
 import re
 from datetime import datetime
-from playwright.sync_api import sync_playwright, Page, Playwright
+from playwright.sync_api import sync_playwright
+
+from spiders.base_spider import BaseSpider
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-class XinDaSpider:
-    def __init__(self, page: Page, username, password):
-        self.page = page
-        self.username = username
-        self.password = password
-        self.is_logged_in = False
+class XinDaSpider(BaseSpider):
 
     def login(self):
         """执行登录逻辑（心达系统）"""
-        print("正在登录心达物流系统...")
+        logger.info("正在登录心达物流系统...")
         self.page.goto("http://szxdgj.nextsls.com/tms/wos/login?redirect_url=%2Ftms%2Fwos")
         
         # 填写账号密码
@@ -33,9 +33,9 @@ class XinDaSpider:
                 close_btn = self.page.get_by_text("×")
                 close_btn.wait_for(timeout=3000)
                 close_btn.click()
-                print("检测到并关闭了欢迎弹窗")
+                logger.info("检测到并关闭了欢迎弹窗")
             except:
-                print("未检测到欢迎弹窗")
+                logger.info("未检测到欢迎弹窗")
 
             # --- 导航到运单页面 ---
             # 根据源码，菜单路径是 "发货运单工单" -> "运单"
@@ -48,11 +48,11 @@ class XinDaSpider:
             order_menu.wait_for(timeout=10000)
             order_menu.click()
             
-            print("登录并进入运单查询页成功")
+            logger.info("登录并进入运单查询页成功")
             self.is_logged_in = True
             
         except Exception as e:
-            print(f"登录或导航失败: {e}")
+            logger.error(f"登录或导航失败: {e}")
     
     @staticmethod
  
@@ -173,10 +173,10 @@ class XinDaSpider:
         查询单个运单号。
         """
         if not self.is_logged_in:
-            print("请先登录")
+            logger.warning("请先登录")
             return None
 
-        print(f"正在查询: {tracking_no}")
+        logger.info(f"正在查询: {tracking_no}")
         try:
             # 1. 填入单号并回车查询
             search_box = self.page.get_by_role("textbox", name="输入单号查询，多个请用“,”隔开")
@@ -207,7 +207,7 @@ class XinDaSpider:
             if result_locator.count() > 0:
                 texts = result_locator.all_inner_texts()
                 self.page.keyboard.press("Escape")
-                print(f"提取到的物流轨迹信息：\n{texts}")
+                logger.info(f"提取到的物流轨迹信息：\n{texts}")
             if texts:   
                 trace, latest_info, sail_time, arrive_time, sign_time, voyage_info = self.parse_logistics_data(texts)
                 # --- 判断是否被查验 ---
@@ -229,11 +229,11 @@ class XinDaSpider:
                     "status": status                 # 当前状态
                 }
             else:
-                print("未找到轨迹信息节点 (.pod-route-info)")
+                logger.warning("未找到轨迹信息节点 (.pod-route-info)")
                 return {"error": "未找到轨迹", "trace": "", "latest_info": ""}
                         
         except Exception as e:
-            print(f"查询 {tracking_no} 出错: {e}")
+            logger.error(f"查询 {tracking_no} 出错: {e}")
             return None
 
 

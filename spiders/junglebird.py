@@ -4,19 +4,20 @@ import os
 import time
 import random
 from dotenv import load_dotenv
-from playwright.sync_api import sync_playwright, Page, Playwright
+from playwright.sync_api import sync_playwright
+
+from spiders.base_spider import BaseSpider
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-class JungleBirdSpider:
-    def __init__(self, page: Page, username, password):
-        self.page = page
-        self.username = username
-        self.password = password
-        self.is_logged_in = False
+class JungleBirdSpider(BaseSpider):
 
     def login(self):
         """执行登录逻辑（丛林鸟系统无滑块）"""
-        print("正在登录丛林鸟物流...")
+        logger.info("正在登录丛林鸟物流...")
         self.page.goto("http://forest-bird.nextsls.com/tms/wos/login?redirect_url=%2Ftms%2Fwos")
         
         # 填写账号密码
@@ -30,9 +31,9 @@ class JungleBirdSpider:
             # --- 判断登录成功：等待弹窗或跳转 ---
             try:
                 self.page.get_by_text("×").click(timeout=3000)
-                print("检测到并关闭了登录弹窗")
+                logger.info("检测到并关闭了登录弹窗")
             except:
-                print("未检测到登录弹窗，继续执行")
+                logger.info("未检测到登录弹窗，继续执行")
 
             # 2. 点击侧边栏的 "运单" 菜单，验证是否进入主界面，如果能点击，说明已经登录成功
             self.page.get_by_text("发货").click()
@@ -40,11 +41,11 @@ class JungleBirdSpider:
             order_menu.wait_for(timeout=10000)
             order_menu.click()
             
-            print("登录并进入主界面成功")
+            logger.info("登录并进入主界面成功")
             self.is_logged_in = True
             
         except Exception as e:
-            print(f"登录失败: {e}")
+            logger.error(f"登录失败: {e}")
 
     @staticmethod
     def parse_logistics_data(raw_list):
@@ -209,10 +210,10 @@ class JungleBirdSpider:
         查询单个运单号。
         """
         if not self.is_logged_in:
-            print("请先登录")
+            logger.warning("请先登录")
             return None
 
-        print(f"正在查询: {tracking_no}")
+        logger.info(f"正在查询: {tracking_no}")
         try:
             # 1. 填入单号并回车查询
             search_box = self.page.get_by_role("textbox", name="输入单号查询，多个请用“,”隔开")
@@ -230,7 +231,7 @@ class JungleBirdSpider:
             try:
                 locator_a.or_(locator_b).wait_for(timeout=5000) # 设置一个合理的超时
             except:
-                print("两个元素都没出现")
+                logger.warning("两个元素都没出现")
                 # 这里可以添加 return 或 报错处理
 
             # 3. 收集所有当前可见的元素
@@ -271,7 +272,7 @@ class JungleBirdSpider:
                         # 取换行符之后的所有内容（+1 是为了跳过 \n 本身）
                         texts_str = texts_str[first_newline_index + 1:]
                 texts = [texts_str]
-                print(f"📝 轨迹信息: {texts}")
+                logger.info(f"轨迹信息: {texts}")
                 trace, latest_info, sail_time, arrive_time, sign_time, voyage_info = self.parse_logistics_data(texts)
                 # --- 判断是否被查验 ---
                 is_inspected = any("查验" in item for item in trace)
@@ -293,11 +294,11 @@ class JungleBirdSpider:
                 }         
                 
             else:
-                print("未找到轨迹信息节点 (.pod-route-info)")
+                logger.warning("未找到轨迹信息节点 (.pod-route-info)")
                 return {"error": "未找到轨迹", "trace": "", "latest_info": ""}
 
         except Exception as e:
-            print(f"查询 {tracking_no} 出错: {e}")
+            logger.error(f"查询 {tracking_no} 出错: {e}")
             return None
 
 

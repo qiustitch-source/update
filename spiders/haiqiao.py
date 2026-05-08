@@ -2,21 +2,22 @@
 import os
 import re
 from dotenv import load_dotenv
-from playwright.sync_api import sync_playwright, Page, Playwright
+from playwright.sync_api import sync_playwright
 import time
 from datetime import datetime
 
+from spiders.base_spider import BaseSpider
 
-class HaiqiaoSpider:
-    def __init__(self, page: Page, username, password):
-        self.page = page
-        self.username = username
-        self.password = password
-        self.is_logged_in = False
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class HaiqiaoSpider(BaseSpider):
 
     def login(self):
         """执行登录逻辑（包含滑块验证）"""
-        print("正在登录海桥物流...")
+        logger.info("正在登录海桥物流...")
         self.page.goto("https://app.ocean-bridges.com/login")
         
         # 填写账号密码 
@@ -29,7 +30,7 @@ class HaiqiaoSpider:
             
             # 等待滑块出现
             if slider_handle.count() > 0: # 检查是否存在
-                print("检测到滑块，正在处理...")
+                logger.info("检测到滑块，正在处理...")
                 box = slider_handle.bounding_box()
                 
                 if box:
@@ -47,7 +48,7 @@ class HaiqiaoSpider:
                     # 4. 松开鼠标
                     self.page.mouse.up()
                     
-                    print("滑块拖动完成")
+                    logger.info("滑块拖动完成")
                     # 等待验证结果
                     time.sleep(1.5)
             
@@ -59,11 +60,11 @@ class HaiqiaoSpider:
             # 简单判断是否登录成功,假设出现查询框代表登录成功
             order_input = self.page.get_by_role("textbox", name="订单号（运单号），如：OBEC240453611")
             order_input.wait_for(timeout=10000)       
-            print("检测到查询页面，登录成功")
+            logger.info("检测到查询页面，登录成功")
             self.is_logged_in = True
             
         except Exception as e:
-            print(f"登录或滑块处理失败: {e}")
+            logger.error(f"登录或滑块处理失败: {e}")
 
     @staticmethod
     def parse_logistics_list(lines, nodes):
@@ -239,10 +240,10 @@ class HaiqiaoSpider:
         注意：代码逻辑是 fill -> click query -> click result text。
         """
         if not self.is_logged_in:
-            print("请先登录")
+            logger.warning("请先登录")
             return None
 
-        print(f"正在查询: {tracking_no}")
+        logger.info(f"正在查询: {tracking_no}")
         try:
             # 1. 填入单号
             self.page.get_by_role("textbox", name="订单号（运单号），如：OBEC240453611").fill(tracking_no)
@@ -290,11 +291,11 @@ class HaiqiaoSpider:
                     "status": status                 # 当前状态
                 }
             else:
-                print("未找到轨迹信息")
+                logger.warning("未找到轨迹信息")
                 return {"error": "未找到轨迹", "trace": "", "latest_info": ""}
 
         except Exception as e:
-            print(f"查询 {tracking_no} 出错: {e}")
+            logger.error(f"查询 {tracking_no} 出错: {e}")
             return None
 
 

@@ -86,20 +86,6 @@ def load_excel_to_db(file_path):
     except Exception as e:
         logger.error(f"Excel 导入数据库失败: {e}")
 
-def _search_with_retry(spider, tracking_no, max_retries=3):
-    """带重试的查询包装函数，不依赖爬虫继承"""
-    for attempt in range(max_retries):
-        try:
-            result = spider.search(tracking_no)
-            if result:
-                return result
-            logger.warning(f"查询 {tracking_no} 返回空结果，第 {attempt + 1} 次尝试")
-        except Exception as e:
-            logger.warning(f"查询 {tracking_no} 第 {attempt + 1} 次失败: {e}")
-    logger.error(f"查询 {tracking_no} 在 {max_retries} 次尝试后仍失败")
-    return None
-
-
 def process_crawlers(bot=None):
     """使用工厂模式的核心爬虫调度逻辑"""
     tasks = get_pending_tasks()
@@ -139,8 +125,8 @@ def process_crawlers(bot=None):
                     continue
 
                 cred = CREDENTIALS.get(fw_name, {})
-                username = cred.get('user')
-                password = cred.get('pwd')
+                username = cred.get('user') or ""
+                password = cred.get('pwd') or ""
 
                 context = browser.new_context()
                 page = context.new_page()
@@ -154,7 +140,10 @@ def process_crawlers(bot=None):
                     spider.login()
 
                     for task in fw_tasks:
-                        result = _search_with_retry(spider, task['tracking_no'])
+                        if fw_name == '纽酷':
+                            result = spider.search(task['tracking_no'])
+                        else:
+                            result = spider.search_with_retry(task['tracking_no'])
                         if result:
                             update_tracking_info(task['shipment_id'], result, bot=bot)
 
