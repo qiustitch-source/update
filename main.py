@@ -2,6 +2,7 @@
 # 物流追踪自动化项目 - 主入口文件
 # 功能：编排整个物流追踪流程，包括数据导入、爬虫调度、异常分析、通知推送、数据回写
 
+import os
 import json
 import logging
 import pandas as pd
@@ -25,8 +26,18 @@ from spiders.yipai import YiPaiSpider
 from spiders.niuku import NiuKuSpider
 from spiders.local_strategies import LocalExcelStrategy
 
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# 配置日志：同时输出到控制台和文件
+log_dir = 'logs'
+os.makedirs(log_dir, exist_ok=True)  # 自动创建 logs 目录
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),                                              # 控制台输出
+        logging.FileHandler(os.path.join(log_dir, 'app.log'), encoding='utf-8')  # 文件输出
+    ]
+)
 
 logger = logging.getLogger(__name__)
 
