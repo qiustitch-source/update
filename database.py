@@ -203,7 +203,7 @@ def update_tracking_info(shipment_id, result, bot=None):
                         f"*请及时关注物流动态*"
                     )
                     logger.info(f"发送钉钉消息给 {manager_name} ({user_id}): {msg}")
-                    bot.send_private_message(user_id, msg)
+                    # bot.send_private_message(user_id, msg)
                 else:
                     logger.warning(f"未找到负责人 {manager_name} 对应的钉钉 ID")
 

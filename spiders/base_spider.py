@@ -3,7 +3,9 @@
 # 定义了所有爬虫的通用接口：login、search、search_with_retry、safe_wait
 # 所有爬虫都应继承此类，根据需要重写 needs_browser() 和 needs_login() 方法
 
+from __future__ import annotations
 from playwright.sync_api import Page
+from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,10 +16,10 @@ class BaseSpider:
     """
     def __init__(self, **kwargs):
         """接受任意参数，子类按需使用"""
-        self.page = kwargs.get('page')
-        self.username = kwargs.get('username', '')
-        self.password = kwargs.get('password', '')
-        self.is_logged_in = False
+        self.page: Optional[Page] = kwargs.get('page')
+        self.username: str = kwargs.get('username', '')
+        self.password: str = kwargs.get('password', '')
+        self.is_logged_in: bool = False
 
     def login(self):
         """子类必须实现登录逻辑"""

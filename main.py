@@ -306,7 +306,7 @@ if __name__ == "__main__":
     process_crawlers(bot=bot)
 
     us_list, others, inspections, delations = analyze_logistics_exceptions()
-    send_notifications(us_list, others, inspections, delations, bot=bot)
+    # send_notifications(us_list, others, inspections, delations, bot=bot)
 
     # 数据写回 Excel
     read_and_update_excel(FILE_PATHS['main_excel'], '发货数据详情')

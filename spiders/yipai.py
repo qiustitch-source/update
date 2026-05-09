@@ -1,10 +1,12 @@
 
+import sys
 import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import re
-import time
 from datetime import datetime
-from dotenv import load_dotenv
-from playwright.sync_api import sync_playwright
+from typing import Optional
+from playwright.sync_api import sync_playwright, Frame
 
 from spiders.base_spider import BaseSpider
 
@@ -16,14 +18,21 @@ logger = logging.getLogger(__name__)
 class YiPaiSpider(BaseSpider):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.frame: Optional[Frame] = None
         self.is_logged_in = True
 
     def login(self):
         """该网站无需登录，导航到查询页面并等待加载即可。"""
+        assert self.page is not None
         try:
             self.page.goto("http://track2.e-express.com/")
-            self.page.wait_for_selector("textarea#cno", timeout=10000)
-            logger.info("E-Express 查询页面已加载")
+            # 页面使用 frameset，实际内容在 name="main" 的子 frame 中
+            self.frame = self.page.frame(name="main")
+            if self.frame:
+                self.frame.wait_for_selector("textarea#cno", timeout=15000)
+                logger.info("E-Express 查询页面已加载")
+            else:
+                logger.error("未找到页面子 frame")
         except Exception as e:
             logger.error(f"页面加载失败: {e}")
 
@@ -160,15 +169,17 @@ class YiPaiSpider(BaseSpider):
         return sail_time, arrive_time, sign_time, is_inspected
 
     def search(self, tracking_no):
+        assert self.page is not None
+        assert self.frame is not None
         logger.info(f"正在查询 E-Express 单号: {tracking_no}")
         try:
-            # 1. 填入单号并搜索
-            self.page.fill("textarea#cno", tracking_no)
-            self.page.click("button[type=submit]")
-            self.page.wait_for_load_state("networkidle", timeout=10000)
+            # 1. 填入单号并搜索（在子 frame 中操作）
+            self.frame.fill("textarea#cno", tracking_no)
+            self.frame.click("button[type=submit]")
+            self.page.wait_for_load_state("networkidle", timeout=15000)
 
             # 2. 定位第一个结果表格中的行
-            rows = self.page.locator("table").first.locator("tbody tr").all()
+            rows = self.frame.locator("table").first.locator("tbody tr").all()
             if not rows:
                 return {"trace": "未找到轨迹数据", "latest_info": "", "status": ""}
 
@@ -236,7 +247,7 @@ def main():
     password = ""
     headless = True # 默认 False 方便观察
 
-    print(f"ℹ️ 正在初始化 E-Express 爬虫...")
+    print(f"正在初始化 E-Express 爬虫...")
 
     # --- 第三步：启动 Playwright ---
     with sync_playwright() as p:
@@ -245,8 +256,8 @@ def main():
         page = context.new_page()
 
         try:
-            spider = YiPaiSpider(page, username, password)
-            spider.login() # 初始化 iframe
+            spider = YiPaiSpider(page=page, username=username, password=password)
+            spider.login() # 初始化页面
 
             # 测试查询
             result = spider.search("260331C-3")
