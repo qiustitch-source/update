@@ -17,11 +17,11 @@ class YiPaiSpider(BaseSpider):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.is_logged_in = True
-        self.page.goto("http://47.112.210.220:8082/trackIndex.htm")
 
     def login(self):
-        """该网站无需登录，等待查询输入框加载即可。"""
+        """该网站无需登录，导航到查询页面并等待加载即可。"""
         try:
+            self.page.goto("http://track2.e-express.com/")
             self.page.wait_for_selector("textarea#cno", timeout=10000)
             logger.info("E-Express 查询页面已加载")
         except Exception as e:
