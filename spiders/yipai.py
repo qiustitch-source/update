@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 
 class YiPaiSpider(BaseSpider):
-    def __init__(self, page, username=None, password=None):
-        super().__init__(page, username, password)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
         self.is_logged_in = True
         self.page.goto("http://47.112.210.220:8082/trackIndex.htm")
 

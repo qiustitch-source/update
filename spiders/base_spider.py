@@ -1,7 +1,7 @@
 # base_spider.py
 # 爬虫抽象基类
-# 定义了所有 Playwright 爬虫的通用接口：login、search、search_with_retry、safe_wait
-# 所有基于 Playwright 的爬虫（袋你飞、海桥、心达、丛林鸟、易派）都应继承此类
+# 定义了所有爬虫的通用接口：login、search、search_with_retry、safe_wait
+# 所有爬虫都应继承此类，根据需要重写 needs_browser() 和 needs_login() 方法
 
 from playwright.sync_api import Page
 import logging
@@ -10,12 +10,13 @@ logger = logging.getLogger(__name__)
 
 class BaseSpider:
     """爬虫抽象基类：定义通用接口和重试机制
-    所有基于 Playwright 的爬虫都应继承此类并实现 login() 和 search() 方法
+    所有爬虫都应继承此类并实现 login() 和 search() 方法
     """
-    def __init__(self, page: Page, username: str = "", password: str = ""):
-        self.page = page
-        self.username = username
-        self.password = password
+    def __init__(self, **kwargs):
+        """接受任意参数，子类按需使用"""
+        self.page = kwargs.get('page')
+        self.username = kwargs.get('username', '')
+        self.password = kwargs.get('password', '')
         self.is_logged_in = False
 
     def login(self):
@@ -49,3 +50,19 @@ class BaseSpider:
         except Exception:
             logger.warning(f"等待元素超时: {selector}")
             return False
+
+    def needs_browser(self) -> bool:
+        """是否需要浏览器，默认 True
+        API 爬虫和本地 Excel 策略应返回 False
+        """
+        return True
+
+    def needs_login(self) -> bool:
+        """是否需要登录，默认 True
+        无需登录的爬虫应返回 False
+        """
+        return True
+
+    def set_page(self, page):
+        """设置 page 对象"""
+        self.page = page

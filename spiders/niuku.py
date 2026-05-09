@@ -7,19 +7,20 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
+from spiders.base_spider import BaseSpider
+
 # 配置日志
 logger = logging.getLogger(__name__)
 
-class NiuKuSpider:
-    def __init__(self, page=None, username='J12970B', password='WJ123'):
+class NiuKuSpider(BaseSpider):
+    def __init__(self, **kwargs):
         """
         纽酷爬虫类：采用 API 接口调用方式。
-        :param page: 为了保持结构一致留下的参数，实际 API 不使用 page 对象
+        不使用 page 对象，通过 API 获取物流信息。
         """
-        self.username = username
-        self.password = password
+        super().__init__(**kwargs)
         self.token = None
-        
+
         # API 终端配置
         self.BASE_URL = 'https://api.usniuku.com/portal/api/1.0/openApi'
         self.LOGIN_URL = f'{self.BASE_URL}/login'
@@ -43,13 +44,18 @@ class NiuKuSpider:
         with open(self.CACHE_FILE, 'w') as f:
             json.dump({'token': token, 'timestamp': int(time.time())}, f)
 
+    def needs_browser(self) -> bool:
+        """纽酷使用 API 模式，不需要浏览器"""
+        return False
+
     def login(self):
         """获取并验证登录 Token"""
         token, ts = self._get_cached_token()
         if token and (time.time() - ts) < 24 * 60 * 60:
             self.token = token
             logger.info("使用纽酷缓存 Token 成功")
-            return True
+            self.is_logged_in = True
+            return
 
         logger.info(f"正在登录纽酷账号: {self.username}")
         try:
@@ -59,25 +65,26 @@ class NiuKuSpider:
                 'account': self.username,
                 'password': self.password
             }, headers=headers, timeout=10)
-            
+
             resp.raise_for_status()
             data = resp.json()
-            
+
             if str(data.get('code')) == "200":
                 # 确保 token 路径正确，部分接口可能直接在 data 下或 data['token']
                 self.token = data.get('data', {}).get('token')
                 if not self.token:
                     logger.error(f"登录响应成功但未找到 Token: {data}")
-                    return False
+                    self.is_logged_in = False
+                    return
                 self._cache_token(self.token)
                 logger.info("纽酷登录成功并缓存 Token")
-                return True
+                self.is_logged_in = True
             else:
                 logger.error(f"纽酷登录失败。响应内容: {data}")
-                return False
+                self.is_logged_in = False
         except Exception as e:
             logger.error(f"纽酷登录接口异常: {e}")
-            return False
+            self.is_logged_in = False
     def search(self, tracking_no):
         """
         执行查询逻辑

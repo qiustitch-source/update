@@ -6,22 +6,26 @@ from datetime import datetime, timedelta
 
 import logging
 
+from spiders.base_spider import BaseSpider
+
 logger = logging.getLogger(__name__)
 
 
-class LocalExcelStrategy:
+class LocalExcelStrategy(BaseSpider):
     """本地 Excel 策略类：用于辰舟、欧杰等货代的数据查询
     直接读取本地 Excel 文件，通过 FBA ID 或发货 ID 进行匹配
+    不使用浏览器，不需要登录
     """
-    def __init__(self, file_path, forwarder_name, sheet_name=0):
+    def __init__(self, **kwargs):
         """
-        :param file_path: Excel 文件路径
-        :param forwarder_name: 货代名称 (用于日志和逻辑区分)
-        :param sheet_name: 要读取的 Sheet 名称或索引 (默认为第一个 Sheet)
+        接受参数：
+        - file_path: Excel 文件路径
+        - forwarder_name: 货代名称 (用于日志和逻辑区分)
+        - sheet_name: 要读取的 Sheet 名称或索引 (默认为第一个 Sheet)
         """
-        self.file_path = file_path
-        self.forwarder_name = forwarder_name
-        self.sheet_name = sheet_name
+        self.file_path = kwargs.get('file_path')
+        self.forwarder_name = kwargs.get('forwarder_name')
+        self.sheet_name = kwargs.get('sheet_name', 0)
         self.df = None
         self.load_data()
 
@@ -48,6 +52,18 @@ class LocalExcelStrategy:
             logger.info(f"[{self.forwarder_name}] 成功加载本地数据: {len(self.df)} 条 (Sheet: {self.sheet_name})")
         except Exception as e:
             logger.error(f"[{self.forwarder_name}] 读取文件失败: {e}")
+
+    def needs_browser(self) -> bool:
+        """本地 Excel 策略不需要浏览器"""
+        return False
+
+    def needs_login(self) -> bool:
+        """本地 Excel 策略不需要登录"""
+        return False
+
+    def login(self):
+        """无需登录，空实现"""
+        pass
 
     def search_order(self, task_info):
         """

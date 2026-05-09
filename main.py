@@ -106,14 +106,33 @@ def load_excel_to_db(file_path):
     except Exception as e:
         logger.error(f"Excel 导入数据库失败: {e}")
 
+def create_spider(fw_name, **kwargs):
+    """工厂函数：根据货代名称创建对应的爬虫实例"""
+    # 特殊处理：辰舟/欧杰使用本地 Excel 策略
+    if fw_name in ['辰舟', '欧杰']:
+        config_key = 'chenzhou' if fw_name == '辰舟' else 'oujie'
+        sheet_idx = 1 if fw_name == '辰舟' else 0
+        return LocalExcelStrategy(
+            file_path=FILE_PATHS[config_key],
+            forwarder_name=fw_name,
+            sheet_name=sheet_idx
+        )
+
+    # 其他货代从 SPIDER_FACTORY 中获取
+    spider_class = SPIDER_FACTORY.get(fw_name)
+    if not spider_class:
+        logger.warning(f"未知货代类型: {fw_name}")
+        return None
+    return spider_class(**kwargs)
+
+
 def process_crawlers(bot=None):
     """使用工厂模式的核心爬虫调度逻辑
     1. 从数据库获取待处理任务（未签收且有货运单号）
     2. 按货代名称分组
     3. 对每组任务：
-       - 辰舟/欧杰：使用本地 Excel 策略
-       - 纽酷：使用 API 模式（不继承 BaseSpider）
-       - 其他：使用 Playwright 浏览器自动化
+       - 辰舟/欧杰：使用本地 Excel 策略，传入 task_info 字典
+       - 其他：使用统一接口，传入 tracking_no 字符串
     4. 每个查询结果更新到数据库
     """
     tasks = get_pending_tasks()
@@ -135,50 +154,52 @@ def process_crawlers(bot=None):
             logger.info(f">>> 开始处理 [{fw_name}] 任务，共 {len(fw_tasks)} 条")
 
             try:
-                # 1. 处理本地 Excel 策略类的货代
-                if fw_name in ['辰舟', '欧杰']:
-                    config_key = 'chenzhou' if fw_name == '辰舟' else 'oujie'
-                    sheet_idx = 1 if fw_name == '辰舟' else 0
-                    spider = LocalExcelStrategy(FILE_PATHS[config_key], fw_name, sheet_idx)
-                    for task in fw_tasks:
-                        result = spider.search_order(task)
-                        if result:
-                            update_tracking_info(task['shipment_id'], result, bot=bot)
-                    continue
-
-                # 2. 处理在线爬虫类的货代
-                spider_cls = SPIDER_FACTORY.get(fw_name)
-                if not spider_cls:
-                    logger.warning(f"未知货代类型: {fw_name}，跳过。")
-                    continue
-
+                # 获取凭证
                 cred = CREDENTIALS.get(fw_name, {})
                 username = cred.get('user') or ""
                 password = cred.get('pwd') or ""
 
-                context = browser.new_context()
-                page = context.new_page()
+                # 创建爬虫实例
+                spider = create_spider(
+                    fw_name,
+                    page=None,  # 稍后设置
+                    username=username,
+                    password=password,
+                    file_path=FILE_PATHS.get(fw_name.lower()),
+                    forwarder_name=fw_name,
+                    sheet_name=1 if fw_name == '辰舟' else 0
+                )
 
-                try:
-                    if fw_name == '纽酷':
-                        spider = spider_cls(username=username, password=password)
-                    else:
-                        spider = spider_cls(page, username, password)
+                if not spider:
+                    continue
 
+                # 如果需要浏览器，创建 context 和 page
+                context = None
+                if spider.needs_browser():
+                    context = browser.new_context()
+                    page = context.new_page()
+                    spider.set_page(page)
+
+                # 如果需要登录，执行登录
+                if spider.needs_login():
                     spider.login()
 
-                    for task in fw_tasks:
-                        if fw_name == '纽酷':
-                            result = spider.search(task['tracking_no'])
-                        else:
-                            result = spider.search_with_retry(task['tracking_no'])
-                        if result:
-                            update_tracking_info(task['shipment_id'], result, bot=bot)
+                # 统一的查询循环
+                for task in fw_tasks:
+                    if fw_name in ['辰舟', '欧杰']:
+                        # 本地 Excel 策略：传入 task_info 字典
+                        result = spider.search_order(task)
+                    else:
+                        # 其他爬虫：传入 tracking_no 字符串
+                        result = spider.search_with_retry(task['tracking_no'])
 
-                except Exception as e:
-                    logger.error(f"处理货代 [{fw_name}] 时发生内部错误: {e}")
-                finally:
+                    if result:
+                        update_tracking_info(task['shipment_id'], result, bot=bot)
+
+                # 清理浏览器资源
+                if context:
                     context.close()
+
             except Exception as e:
                 logger.error(f"处理货代 [{fw_name}] 时发生异常: {e}")
 
