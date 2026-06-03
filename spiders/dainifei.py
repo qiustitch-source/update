@@ -194,7 +194,7 @@ def main():
 
         try:
             # 1. 创建爬虫实例
-            spider = DainifeiSpider(page, username, password)
+            spider = DainifeiSpider(page=page, username=username, password=password)
 
             # 2. 登录
             spider.login()

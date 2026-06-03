@@ -11,6 +11,27 @@ from notice import DingTalkRobot
 logger = logging.getLogger(__name__)
 
 
+TRACKING_FIELD_LABELS = {
+    'status': '当前状态',
+    'latest_info': '最新路径',
+    'raw_full_trace': '完整路径',
+    'vessel_voyage': '船名航次',
+    'etd': '开船时间',
+    'eta': '到港时间',
+    'signed_at': '签收时间',
+    'is_inspected': '是否被查验',
+}
+
+
+def _format_log_value(value):
+    """将数据库值和爬虫返回值统一转成便于日志对比的文本"""
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "是" if value else "否"
+    return str(value).strip()
+
+
 def get_connection():
     """获取数据库连接
     创建并返回一个 PostgreSQL 数据库连接，设置客户端编码为 UTF-8
@@ -171,21 +192,64 @@ def update_tracking_info(shipment_id, result, bot=None):
     cur = conn.cursor()
 
     new_latest_info = result.get('latest_info')
+    update_fields = {
+        'status': result.get('status'),
+        'latest_info': result.get('latest_info'),
+        'raw_full_trace': result.get('trace'),
+        'vessel_voyage': result.get('voyage_info'),
+        'etd': result.get('sail_time'),
+        'eta': result.get('arrive_time'),
+        'signed_at': result.get('sign_time'),
+        'is_inspected': result.get('is_inspected')
+    }
+    changed_fields = []
 
     # --- 对比逻辑 ---
     try:
-        check_sql = "SELECT latest_info, manager_name, tracking_no, shop_name FROM logistics_shipments WHERE shipment_id = %s"
+        check_sql = """
+            SELECT latest_info, manager_name, tracking_no, shop_name,
+                   status, raw_full_trace, vessel_voyage, etd, eta, signed_at, is_inspected
+            FROM logistics_shipments
+            WHERE shipment_id = %s
+        """
         cur.execute(check_sql, (shipment_id,))
         row = cur.fetchone()
 
         if row:
-            old_latest_info = row[0]
+            old_data = {
+                'latest_info': row[0],
+                'status': row[4],
+                'raw_full_trace': row[5],
+                'vessel_voyage': row[6],
+                'etd': row[7],
+                'eta': row[8],
+                'signed_at': row[9],
+                'is_inspected': row[10],
+            }
             manager_name = row[1]
             tracking_no = row[2]
             shop_name = row[3]
-            logger.info(f"对比物流状态: {new_latest_info} vs {old_latest_info}")
 
-            if _status_changed(new_latest_info, old_latest_info):
+            logger.info("发货ID %s 最新状态对比：", shipment_id)
+            logger.info("旧发货流程表：%s", _format_log_value(old_data.get('latest_info')))
+            logger.info("本次爬取结果：%s", _format_log_value(new_latest_info))
+
+            for field, new_value in update_fields.items():
+                if new_value is None or new_value == "":
+                    continue
+                old_value = old_data.get(field)
+                if _format_log_value(old_value) != _format_log_value(new_value):
+                    changed_fields.append(field)
+
+            if changed_fields:
+                logger.info(
+                    "发生变化字段：%s",
+                    "、".join(TRACKING_FIELD_LABELS.get(field, field) for field in changed_fields)
+                )
+            else:
+                logger.info("发生变化字段：无")
+
+            if _status_changed(new_latest_info, old_data.get('latest_info')):
                 user_id = MANAGER_MAPPING.get(manager_name)
                 if user_id:
                     if bot is None:
@@ -202,31 +266,20 @@ def update_tracking_info(shipment_id, result, bot=None):
                         f"最新状态： {new_latest_info}\n"
                         f"*请及时关注物流动态*"
                     )
-                    logger.info(f"发送钉钉消息给 {manager_name} ({user_id}): {msg}")
-                    # bot.send_private_message(user_id, msg)
+                    logger.info("负责人通知消息：发送对象=%s (%s)", manager_name, user_id)
+                    logger.info("负责人通知内容：\n%s", msg)
+                    bot.send_private_message(user_id, msg)
                 else:
                     logger.warning(f"未找到负责人 {manager_name} 对应的钉钉 ID")
 
     except Exception as e:
         logger.error(f"对比物流状态时出错: {e}")
 
-    # 定义所有可能需要更新的字段映射
-    update_fields = {
-        'status': result.get('status'),
-        'latest_info': result.get('latest_info'),
-        'raw_full_trace': result.get('trace'),
-        'vessel_voyage': result.get('voyage_info'),
-        'etd': result.get('sail_time'),
-        'eta': result.get('arrive_time'),
-        'signed_at': result.get('sign_time'),
-        'is_inspected': result.get('is_inspected')
-    }
-
     set_clauses = []
     values = []
 
     for db_column, value in update_fields.items():
-        if value:
+        if value is not None and value != "":
             set_clauses.append(f"{db_column} = %s")
             values.append(value)
 
@@ -242,7 +295,11 @@ def update_tracking_info(shipment_id, result, bot=None):
     try:
         cur.execute(sql, values + [shipment_id])
         conn.commit()
-        logger.info(f"ID {shipment_id} 更新成功，更新了字段: {', '.join([part.split(' = ')[0] for part in set_clauses])}")
+        logger.info(
+            "ID %s 更新成功，写入字段: %s",
+            shipment_id,
+            "、".join(TRACKING_FIELD_LABELS.get(part.split(' = ')[0], part.split(' = ')[0]) for part in set_clauses)
+        )
     except Exception as e:
         logger.error(f"ID {shipment_id} 更新数据库失败: {e}")
     finally:

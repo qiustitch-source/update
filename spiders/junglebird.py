@@ -320,7 +320,7 @@ def main():
         page = context.new_page()
 
         try:
-            spider = JungleBirdSpider(page, username, password)
+            spider = JungleBirdSpider(page=page, username=username, password=password)
             spider.login()
 
             if spider.is_logged_in:

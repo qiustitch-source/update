@@ -24,6 +24,7 @@ from spiders.junglebird import JungleBirdSpider
 from spiders.xinda import XinDaSpider
 from spiders.yipai import YiPaiSpider
 from spiders.niuku import NiuKuSpider
+from spiders.lianyu import LianyuSpider
 from spiders.local_strategies import LocalExcelStrategy
 
 # 配置日志：同时输出到控制台和文件
@@ -49,7 +50,10 @@ SPIDER_FACTORY = {
     '心达': XinDaSpider,
     '丛林鸟': JungleBirdSpider,
     '易派': YiPaiSpider,
-    '纽酷': NiuKuSpider
+    '纽酷': NiuKuSpider,
+    # Excel/数据库中的货代名称必须与这里的 key 一致，才能被主流程调度到对应爬虫
+    '联宇': LianyuSpider,
+    '联宇物流': LianyuSpider
 }
 
 def clean_excel_data(val, is_bool=False):
@@ -126,6 +130,45 @@ def create_spider(fw_name, **kwargs):
     return spider_class(**kwargs)
 
 
+def log_forwarder_section(fw_name, task_count):
+    """打印货代分组标题，让控制台和日志文件里每组任务边界更清楚"""
+    logger.info("\n%s", "=" * 90)
+    logger.info("货代：%s | 待查询货件数：%s", fw_name, task_count)
+    logger.info("%s", "=" * 90)
+
+
+def task_value(task, key, default=""):
+    """兼容普通 dict 和 psycopg2 DictRow 的字段读取"""
+    try:
+        return task.get(key, default)
+    except AttributeError:
+        try:
+            return task[key]
+        except (KeyError, IndexError):
+            return default
+
+
+def log_tracking_result(fw_name, task, result):
+    """统一打印单票货件的查询结果，方便排查每个爬虫返回的数据是否完整"""
+    logger.info("-" * 90)
+    logger.info(
+        "[%s] 发货ID：%s | 运单号：%s | 店铺：%s | 负责人：%s",
+        fw_name,
+        task_value(task, 'shipment_id'),
+        task_value(task, 'tracking_no'),
+        task_value(task, 'shop_name'),
+        task_value(task, 'manager_name'),
+    )
+    logger.info("完整路径：\n%s", result.get('trace') or "")
+    logger.info("最新路径：%s", result.get('latest_info') or "")
+    logger.info("船名航次：%s", result.get('voyage_info') or "")
+    logger.info("开船时间：%s", result.get('sail_time') or "")
+    logger.info("到港时间：%s", result.get('arrive_time') or "")
+    logger.info("签收时间：%s", result.get('sign_time') or "")
+    logger.info("是否被查验：%s", "是" if result.get('is_inspected') else "否")
+    logger.info("当前状态：%s", result.get('status') or "")
+
+
 def process_crawlers(bot=None):
     """使用工厂模式的核心爬虫调度逻辑
     1. 从数据库获取待处理任务（未签收且有货运单号）
@@ -151,7 +194,7 @@ def process_crawlers(bot=None):
         browser = p.chromium.launch(headless=True)
 
         for fw_name, fw_tasks in tasks_by_fw.items():
-            logger.info(f">>> 开始处理 [{fw_name}] 任务，共 {len(fw_tasks)} 条")
+            log_forwarder_section(fw_name, len(fw_tasks))
 
             try:
                 # 获取凭证
@@ -194,7 +237,15 @@ def process_crawlers(bot=None):
                         result = spider.search_with_retry(task['tracking_no'])
 
                     if result:
+                        log_tracking_result(fw_name, task, result)
                         update_tracking_info(task['shipment_id'], result, bot=bot)
+                    else:
+                        logger.warning(
+                            "[%s] 发货ID：%s | 运单号：%s 查询无结果",
+                            fw_name,
+                            task_value(task, 'shipment_id'),
+                            task_value(task, 'tracking_no'),
+                        )
 
                 # 清理浏览器资源
                 if context:
@@ -272,6 +323,8 @@ def send_notifications(us_list, others, inspections, delations, bot=None):
     if us_list:
         msg = f"### 📌 US 站点异常提醒\n\n**当前有 {len(us_list)} 个异常货件（延期>5天）：**\n📦 {', '.join(us_list)}"
         for user_id in US_SITE_MANAGER:
+            logger.info("异常通知消息：发送对象=%s", user_id)
+            logger.info("异常通知内容：\n%s", msg)
             bot.send_private_message(user_id, msg)
 
     # 2. 其他站点异常汇总 (按负责人聚合)
@@ -279,6 +332,8 @@ def send_notifications(us_list, others, inspections, delations, bot=None):
         user_id = MANAGER_MAPPING.get(manager)
         if user_id:
             msg = f"### ⚠️ 延期提醒 - {manager}\n\n您负责的以下货件已延期超过5天：\n{'- ' + '- '.join(ids)}"
+            logger.info("延期通知消息：发送对象=%s (%s)", manager, user_id)
+            logger.info("延期通知内容：\n%s", msg)
             bot.send_private_message(user_id, msg)
 
     # 3. 查验提醒汇总 (按负责人聚合)
@@ -286,6 +341,8 @@ def send_notifications(us_list, others, inspections, delations, bot=None):
         user_id = MANAGER_MAPPING.get(manager)
         if user_id:
             msg = f"### 🔍 查验提醒 - {manager}\n\n以下货件已被查验，请重点关注：\n{'- ' + '- '.join(ids)}"
+            logger.info("查验通知消息：发送对象=%s (%s)", manager, user_id)
+            logger.info("查验通知内容：\n%s", msg)
             bot.send_private_message(user_id, msg)
 
     # 4. 延误提醒汇总 (按负责人聚合)
@@ -293,6 +350,8 @@ def send_notifications(us_list, others, inspections, delations, bot=None):
         user_id = MANAGER_MAPPING.get(manager)
         if user_id:
             msg = f"### 🚧 延误提醒 - {manager}\n\n以下货件存在延误情况，请及时处理：\n{'- ' + '- '.join(ids)}"
+            logger.info("延误通知消息：发送对象=%s (%s)", manager, user_id)
+            logger.info("延误通知内容：\n%s", msg)
             bot.send_private_message(user_id, msg)
 
 if __name__ == "__main__":
@@ -306,7 +365,7 @@ if __name__ == "__main__":
     process_crawlers(bot=bot)
 
     us_list, others, inspections, delations = analyze_logistics_exceptions()
-    # send_notifications(us_list, others, inspections, delations, bot=bot)
+    send_notifications(us_list, others, inspections, delations, bot=bot)
 
     # 数据写回 Excel
     read_and_update_excel(FILE_PATHS['main_excel'], '发货数据详情')

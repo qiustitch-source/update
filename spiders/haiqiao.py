@@ -19,17 +19,20 @@ class HaiqiaoSpider(BaseSpider):
         """执行登录逻辑（包含滑块验证）"""
         logger.info("正在登录海桥物流...")
         self.page.goto("https://app.ocean-bridges.com/login")
-        
-        # 填写账号密码 
+
+        # 填写账号密码
         self.page.get_by_role("textbox", name="用户名").fill(self.username)
         self.page.get_by_role("textbox", name="密码").fill(self.password)
 
         try:
+            assert self.page is not None
+
             # --- 核心逻辑：处理滑块验证  ---
-            slider_handle = self.page.locator(".dv_handler") 
-            
-            # 等待滑块出现
-            if slider_handle.count() > 0: # 检查是否存在
+            slider_handle = self.page.locator(".dv_handler")
+
+            # 处理滑块验证
+            try:
+                slider_handle.wait_for(state="visible", timeout=5000)
                 logger.info("检测到滑块，正在处理...")
                 box = slider_handle.bounding_box()
                 
@@ -51,18 +54,22 @@ class HaiqiaoSpider(BaseSpider):
                     logger.info("滑块拖动完成")
                     # 等待验证结果
                     time.sleep(1.5)
-            
-            # 尝试点击登录按钮
+
+            except Exception as e:
+                logger.info(f"未检测到滑块: {e}")
+
+            # 点击登录按钮
             login_btn = self.page.get_by_role("button", name="登录")
-            if login_btn.is_visible():
-                login_btn.click()
-                
+            login_btn.wait_for(state="visible", timeout=5000)
+            login_btn.click()
+
             # 简单判断是否登录成功,假设出现查询框代表登录成功
+            self.page.get_by_text("订单进展查询").click()
             order_input = self.page.get_by_role("textbox", name="订单号（运单号），如：OBEC240453611")
-            order_input.wait_for(timeout=10000)       
+            order_input.wait_for(timeout=10000)
             logger.info("检测到查询页面，登录成功")
             self.is_logged_in = True
-            
+
         except Exception as e:
             logger.error(f"登录或滑块处理失败: {e}")
 
@@ -309,10 +316,10 @@ def main():
     headless = os.getenv("CRAWLER_HEADLESS", "false").lower() == "true" # 默认 false 方便观察
 
     if not username or not password:
-        print("❌ 错误：未在 .env 文件中找到账号或密码")
+        print("错误：未在 .env 文件中找到账号或密码")
         return
 
-    print(f"ℹ️ 正在使用账号: {username} 初始化爬虫...")
+    print(f"正在使用账号: {username} 初始化爬虫...")
 
     # --- 第三步：启动 Playwright ---
     with sync_playwright() as p:
@@ -321,7 +328,7 @@ def main():
         page = context.new_page()
 
         try:
-            spider = HaiqiaoSpider(page, username, password)
+            spider = HaiqiaoSpider(page=page, username=username, password=password)
             spider.login()
 
             if spider.is_logged_in:

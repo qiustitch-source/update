@@ -4,6 +4,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import re
+import time
 from datetime import datetime
 from typing import Optional
 from playwright.sync_api import sync_playwright, Frame
@@ -69,8 +70,8 @@ class YiPaiSpider(BaseSpider):
                 # 提取完整时间用于后续年份推断
                 full_dt_str = match.group(0) 
                 full_dt = datetime.strptime(full_dt_str, "%Y-%m-%d %H:%M:%S")
-                # 提取冒号后的内容
-                content = line.split(':', 1)[1].strip() if ':' in line else line
+                # 提取时间戳之后的内容（用 " : " 分隔，避免误切时间中的冒号）
+                content = line.split(' : ', 1)[1].strip() if ' : ' in line else line
                 parsed_logs.append({
                     "date_str": date_str,
                     "full_dt": full_dt,
@@ -158,25 +159,19 @@ class YiPaiSpider(BaseSpider):
                         arrive_time = extracted
                         break
 
-        # 4. 提取签收时间 (Sign Time)
-        # 关键词：已签收, 签收. 
-        sign_keywords = ["已签收", "签收", "已派送", "POD", "DELIVERED"]
-        for log in parsed_logs:
-            if any(k in log['content'] for k in sign_keywords):
-                sign_time = log['date_str']
-                break
-
-        return sail_time, arrive_time, sign_time, is_inspected
+        return sail_time, arrive_time, is_inspected
 
     def search(self, tracking_no):
         assert self.page is not None
         assert self.frame is not None
         logger.info(f"正在查询 E-Express 单号: {tracking_no}")
         try:
-            # 1. 填入单号并搜索（在子 frame 中操作）
-            self.frame.fill("textarea#cno", tracking_no)
-            self.frame.click("button[type=submit]")
-            self.page.wait_for_load_state("networkidle", timeout=15000)
+            # 1. 直接用 GET 请求导航到查询结果页
+            # 使用 goto() 代替表单 POST，因为 goto() 会阻塞等待 frame 完全加载，
+            # 避免表单提交后 frame 异步刷新导致读到上一个单号的旧数据
+            self.frame.goto(f"http://120.77.146.129:8082/trackIndex.htm?documentCode={tracking_no}", timeout=15000)
+            # 该网站有请求频率限制，连续快速查询会导致服务器返回空结果，需要间隔
+            time.sleep(2)
 
             # 2. 定位第一个结果表格中的行
             rows = self.frame.locator("table").first.locator("tbody tr").all()
@@ -197,18 +192,11 @@ class YiPaiSpider(BaseSpider):
                 # 检查单元格数量是否足够 (至少要有 Date 和 Trace Record)
                 if len(cells) >= 3:
                     try:
-                        # 先取索引，再取文本
-                        # cells 是一个列表 [td1, td2, td3...]
-                        # 我们需要第 1 列 (索引 0) 和第 3 列 (索引 2)
-
                         date_text = cells[0].inner_text().strip()      # Date 列
                         record_text = cells[2].inner_text().strip()    # Trace Record 列
 
-                        # 确保提取到了有效数据再添加
                         if date_text and record_text:
                             trace_data.append(f"{date_text} : {record_text}")
-                            # 如果需要结构化数据，可以存成字典：
-                            # trace_data.append({"date": date_text, "record": record_text})
 
                     except Exception as e:
                         logger.warning(f"提取某行数据时出错: {e}")
@@ -216,11 +204,17 @@ class YiPaiSpider(BaseSpider):
 
             # 4. 格式化结果
             if trace_data:
-                # print(f"提取到的物流轨迹信息：\n{trace_data}")
                 result_text = "\n".join(trace_data)
-                sail_time, arrive_time, sign_time, is_inspected = self.extract_logistics_info(result_text)
+                sail_time, arrive_time, is_inspected = self.extract_logistics_info(result_text)
+                latest_time = self.frame.locator("div.menu_ ul:nth-child(2) li.div_li2").first.inner_text(timeout=10000)
+                latest_status = self.frame.locator("div.menu_ ul:nth-child(2) li.div_li4").first.inner_text(timeout=10000)
+                sign_keywords = ["已签收", "签收", "已派送", "POD", "DELIVERED"]
+                if any(k in latest_status for k in sign_keywords):
+                    sign_time = latest_time.split(" ")[0]
+                else:
+                    sign_time = ""
                 status = "签收" if sign_time else "在途"
-                latest_info = "Done" if status == "签收" else (trace_data[0]+ "————（" + datetime.now().strftime('%Y-%m-%d') + "）" if trace_data else "")
+                latest_info = "Done" if status == "签收" else (latest_time+":"+latest_status+ "————（" + datetime.now().strftime('%Y-%m-%d') + "）" if trace_data else "")
                 return {
                     "trace": result_text,
                     "latest_info": latest_info,
@@ -260,16 +254,21 @@ def main():
             spider.login() # 初始化页面
 
             # 测试查询
-            result = spider.search("260331C-3")
-            if result:
-                print("=== 查询结果 ===")
-                print(f"最新状态: {result.get('latest_info')}")
-                print(f"完整轨迹: \n{result.get('trace')}")
-                print(f"开船时间: {result.get('sail_time')}")
-                print(f"到港时间: {result.get('arrive_time')}")
-                print(f"签收时间: {result.get('sign_time')}")
-                print(f"是否查验: {result.get('is_inspected')}")
-                print(f"状态: {result.get('status')}")
+            test_list = ['260331C-3','260327Q-1','260428K-1','260417N-5','260331G-5 ','260408B-1','260409H-5',
+                        '260429N-5', '260513C-2','260514F-1','260515K-2','260522H-3','260522J-2']
+            
+            for tracking_no in test_list:
+                result = spider.search(tracking_no)
+                if result:
+                    print("=== 查询结果 ===")
+                    print(f"当前单号: {tracking_no}")
+                    print(f"最新状态: {result.get('latest_info')}")
+                    print(f"完整轨迹: \n{result.get('trace')}")
+                    print(f"开船时间: {result.get('sail_time')}")
+                    print(f"到港时间: {result.get('arrive_time')}")
+                    print(f"签收时间: {result.get('sign_time')}")
+                    print(f"是否查验: {result.get('is_inspected')}")
+                    print(f"状态: {result.get('status')}")
 
         except Exception as e:
             print(f"运行出错: {e}")

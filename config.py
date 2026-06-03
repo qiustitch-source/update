@@ -89,6 +89,15 @@ CREDENTIALS = {
     "心达": {
         "user": os.getenv("XINDA_USERNAME"),
         "pwd": os.getenv("XINDA_PASSWORD")
+    },
+    # 联宇爬虫使用坤云网页登录，账号密码从 .env 的 LIANYU_* 读取
+    "联宇": {
+        "user": os.getenv("LIANYU_USERNAME"),
+        "pwd": os.getenv("LIANYU_PASSWORD")
+    },
+    "联宇物流": {
+        "user": os.getenv("LIANYU_USERNAME"),
+        "pwd": os.getenv("LIANYU_PASSWORD")
     }
 }
 
