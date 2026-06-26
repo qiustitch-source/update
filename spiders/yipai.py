@@ -26,7 +26,7 @@ class YiPaiSpider(BaseSpider):
         """该网站无需登录，导航到查询页面并等待加载即可。"""
         assert self.page is not None
         try:
-            self.page.goto("http://track2.e-express.com/")
+            self.page.goto("http://track3.e-express.com/")  #旧系统：http://track3.e-express.com/
             # 页面使用 frameset，实际内容在 name="main" 的子 frame 中
             self.frame = self.page.frame(name="main")
             if self.frame:
@@ -169,7 +169,7 @@ class YiPaiSpider(BaseSpider):
             # 1. 直接用 GET 请求导航到查询结果页
             # 使用 goto() 代替表单 POST，因为 goto() 会阻塞等待 frame 完全加载，
             # 避免表单提交后 frame 异步刷新导致读到上一个单号的旧数据
-            self.frame.goto(f"http://120.77.146.129:8082/trackIndex.htm?documentCode={tracking_no}", timeout=15000)
+            self.frame.goto(f"http://47.112.210.220:8082/trackIndex.htm?documentCode={tracking_no}", timeout=15000)   #旧系统的后端：http://120.77.146.129:8082/
             # 该网站有请求频率限制，连续快速查询会导致服务器返回空结果，需要间隔
             time.sleep(2)
 
@@ -254,8 +254,7 @@ def main():
             spider.login() # 初始化页面
 
             # 测试查询
-            test_list = ['260331C-3','260327Q-1','260428K-1','260417N-5','260331G-5 ','260408B-1','260409H-5',
-                        '260429N-5', '260513C-2','260514F-1','260515K-2','260522H-3','260522J-2']
+            test_list = ['260529G-1','260527B-1','260604D-4260605G-4260605K-1']
             
             for tracking_no in test_list:
                 result = spider.search(tracking_no)

@@ -18,22 +18,113 @@ class LianyuSpider(BaseSpider):
     SEARCH_URL = "https://client.kunyun.link-trans.com/order/bulk-cargo"
 
     def login(self):
+        if self._ensure_logged_in():
+            return
+
         logger.info("正在登录联宇物流...")
         self.page.goto(self.LOGIN_URL)
-        self.page.get_by_role("textbox", name="请输入账号").fill(self.username)
-        self.page.get_by_role("textbox", name="密码").fill(self.password)
-        self.page.get_by_role("button", name="立即登录").click()
-
         try:
+            username_input = self.page.get_by_role("textbox", name="请输入账号")
+            username_input.wait_for(state="visible", timeout=8000)
+            username_input.fill(self.username)
+            self.page.get_by_role("textbox", name="密码").fill(self.password)
+            self.page.get_by_role("button", name="立即登录").click()
             self.page.wait_for_url("**/online/**", timeout=15000)
             logger.info("登录成功")
             self.is_logged_in = True
+            self.page.wait_for_timeout(1200)
+            self._close_popups()
         except Exception:
             logger.warning("登录后未跳转到预期页面，请检查账号密码")
             self.is_logged_in = False
 
+    def _ensure_logged_in(self):
+        logger.info("正在检查联宇是否已有登录会话...")
+        try:
+            self.page.goto(self.SEARCH_URL)
+            self.page.wait_for_load_state("domcontentloaded")
+            self.page.wait_for_timeout(1000)
+            self._close_popups()
+            self.page.get_by_role("button", name="搜 索").wait_for(
+                state="visible", timeout=5000
+            )
+            logger.info("检测到联宇已有登录会话，直接进入查询页")
+            self.is_logged_in = True
+            return True
+        except Exception:
+            self.is_logged_in = False
+            return False
+
+    def _click_visible(self, locator, desc: str, timeout: int = 800):
+        try:
+            count = locator.count()
+            if count == 0:
+                return False
+            for i in range(count - 1, -1, -1):
+                target = locator.nth(i)
+                if target.is_visible(timeout=timeout):
+                    target.click(force=True)
+                    logger.info("已关闭联宇页面弹窗：%s", desc)
+                    self.page.wait_for_timeout(700)
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def _close_overdue_payment_popup(self):
+        modal = self.page.locator(".ant-modal-content").filter(has_text="超期款待付款")
+        if modal.count() == 0:
+            modal = self.page.locator(".ant-modal-content").filter(has_text="我已知悉")
+        if modal.count() == 0:
+            return False
+
+        modal = modal.last
+        try:
+            if not modal.is_visible(timeout=800):
+                return False
+        except Exception:
+            return False
+
+        close_button = modal.get_by_role(
+            "button", name=re.compile(r"我已知悉|我知道了|知道了|关闭|关 闭|取消")
+        )
+        if self._click_visible(close_button, "超期款待付款"):
+            return True
+
+        return self._click_visible(modal.locator("button"), "超期款待付款")
+
+    def _close_popups(self):
+        for _ in range(3):
+            closed = self._close_overdue_payment_popup()
+            close_locators = [
+                self.page.get_by_role(
+                    "button", name=re.compile(r"我已知悉|我知道了|知道了|关闭|关 闭|取消")
+                ),
+                self.page.locator("button:has-text('我已知悉')"),
+                self.page.locator("button:has-text('我知道了')"),
+                self.page.locator("button:has-text('知道了')"),
+                self.page.locator("xpath=//*[normalize-space()='我已知悉']"),
+                self.page.locator(".ant-modal-close"),
+                self.page.locator(".ant-drawer-close"),
+                self.page.get_by_text("我已知悉", exact=True),
+            ]
+            for locator in close_locators:
+                closed = self._click_visible(locator, "通用弹窗") or closed
+            if not closed:
+                break
+
+        try:
+            if self.page.locator(".ant-modal-mask, .ant-drawer-mask").count() > 0:
+                self.page.keyboard.press("Escape")
+                self.page.wait_for_timeout(500)
+        except Exception:
+            pass
+
     def _open_bulk_cargo_page(self):
         self.page.goto(self.SEARCH_URL)
+        self.page.wait_for_load_state("domcontentloaded")
+        self.page.wait_for_timeout(800)
+        self._close_popups()
         try:
             self.page.get_by_role("button", name="搜 索").wait_for(
                 state="visible", timeout=15000
@@ -78,6 +169,7 @@ class LianyuSpider(BaseSpider):
         logger.info(f"已输入运单号: {tracking_no}")
 
     def _click_search_button(self):
+        self._close_popups()
         self.page.get_by_role("button", name="搜 索").click()
         logger.info("已点击搜索")
 
@@ -198,6 +290,50 @@ class LianyuSpider(BaseSpider):
                 return line
         return ""
 
+    def _relogin_for_retry(self, tracking_no: str, attempt: int):
+        logger.warning(
+            "联宇运单 %s 第 %s 次未获取到有效物流，重新打开登录页并登录后重试",
+            tracking_no,
+            attempt,
+        )
+        self.is_logged_in = False
+        try:
+            self.page.keyboard.press("Escape")
+            self.page.wait_for_timeout(300)
+        except Exception:
+            pass
+        try:
+            self.page.context.clear_cookies()
+            self.page.goto("about:blank")
+            self.page.wait_for_timeout(500)
+        except Exception as e:
+            logger.warning("联宇重试前清理浏览器会话失败: %s", e)
+        self.login()
+
+    def search_with_retry(self, tracking_no: str, max_retries: int = 3):
+        for attempt in range(1, max_retries + 1):
+            if not self.is_logged_in:
+                self.login()
+            if not self.is_logged_in:
+                logger.warning("联宇运单 %s 第 %s 次重试前登录失败", tracking_no, attempt)
+                continue
+
+            result = self.search(tracking_no)
+            if result:
+                return result
+
+            logger.warning(
+                "联宇运单 %s 第 %s/%s 次查询无结果",
+                tracking_no,
+                attempt,
+                max_retries,
+            )
+            if attempt < max_retries:
+                self._relogin_for_retry(tracking_no, attempt)
+
+        logger.error("联宇运单 %s 在 %s 次查询后仍无有效物流", tracking_no, max_retries)
+        return None
+
     def search(self, tracking_no: str):
         if not self.is_logged_in:
             return None
@@ -230,8 +366,11 @@ class LianyuSpider(BaseSpider):
 
             trace_text = modal.inner_text()
             formatted_trace = self._format_trace(trace_text)
+            if not formatted_trace:
+                logger.warning("联宇 %s 未解析到有效物流轨迹", tracking_no)
+                return None
             parsed = self._parse_nodes(trace_text)
-            trace = formatted_trace or trace_text
+            trace = formatted_trace
 
             status = "签收" if parsed["sign_time"] else "在途"
             # 签收货件按现有业务规则写 Done；在途货件取完整轨迹第一条作为最新物流
@@ -281,10 +420,10 @@ def main():
 
     test_list = [
         "990260400016726",
-        "990260400016733",
-        "990260400101220",
-        "990260500088078",
-        "990260500086572",
+        # "990260400016733",
+        # "990260400101220",
+        # "990260500088078",
+        # "990260500086572",
     ]
 
     with sync_playwright() as p:
@@ -297,7 +436,7 @@ def main():
                 print(f"\n{'=' * 50}")
                 print(f"当前单号: {tracking_no}")
                 print("=" * 50)
-                result = spider.search(tracking_no)
+                result = spider.search_with_retry(tracking_no)
                 if result:
                     print(f"船名航次: {result.get('voyage_info')}")
                     print(f"最新状态: {result.get('latest_info')}")
