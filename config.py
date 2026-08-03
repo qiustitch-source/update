@@ -6,6 +6,7 @@
 import os
 import json
 from dotenv import load_dotenv
+from spiders.niuku_accounts import normalize_niuku_accounts
 
 # 加载 .env 文件
 load_dotenv()
@@ -68,6 +69,21 @@ try:
 except json.JSONDecodeError as e:
     raise ValueError(f"配置项 US_SITE_MANAGER 的 JSON 格式有误: {e}")
 
+try:
+    _NIUKU_EXTRA_ACCOUNTS = json.loads(os.getenv("NIUKU_EXTRA_ACCOUNTS") or "{}")
+except json.JSONDecodeError as e:
+    raise ValueError(f"配置项 NIUKU_EXTRA_ACCOUNTS 的 JSON 格式有误: {e}")
+
+if not isinstance(_NIUKU_EXTRA_ACCOUNTS, dict):
+    raise ValueError("配置项 NIUKU_EXTRA_ACCOUNTS 必须是 JSON 对象")
+
+NIUKU_ACCOUNTS = normalize_niuku_accounts(
+    os.getenv("NIUKU_USERNAME"),
+    os.getenv("NIUKU_PASSWORD"),
+    _NIUKU_EXTRA_ACCOUNTS,
+    strict=True,
+)
+
 # 爬虫账号配置
 CREDENTIALS = {
     "袋你飞": {
@@ -104,7 +120,6 @@ CREDENTIALS = {
 # 文件路径配置
 FILE_PATHS = {
     "chenzhou": os.getenv("CHENZHOU_FILE_PATH"),
-    "oujie": os.getenv("OUJIE_FILE_PATH"),
     "main_excel": os.getenv("MAIN_EXCEL_PATH")
 }
 

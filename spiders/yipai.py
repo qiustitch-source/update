@@ -26,7 +26,7 @@ class YiPaiSpider(BaseSpider):
         """该网站无需登录，导航到查询页面并等待加载即可。"""
         assert self.page is not None
         try:
-            self.page.goto("http://track3.e-express.com/")  #旧系统：http://track3.e-express.com/
+            self.page.goto("http://track3.e-express.com/")  #旧系统：http://track2.e-express.com/
             # 页面使用 frameset，实际内容在 name="main" 的子 frame 中
             self.frame = self.page.frame(name="main")
             if self.frame:
@@ -254,7 +254,7 @@ def main():
             spider.login() # 初始化页面
 
             # 测试查询
-            test_list = ['260529G-1','260527B-1','260604D-4260605G-4260605K-1']
+            test_list = ['260617M-5']
             
             for tracking_no in test_list:
                 result = spider.search(tracking_no)

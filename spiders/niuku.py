@@ -20,20 +20,26 @@ class NiuKuSpider(BaseSpider):
         """
         super().__init__(**kwargs)
         self.token = None
+        self.account_key = kwargs.get('account_key') or self.username or 'default'
 
         # API 终端配置
         self.BASE_URL = 'https://api.usniuku.com/portal/api/1.0/openApi'
         self.LOGIN_URL = f'{self.BASE_URL}/login'
         self.TRACK_URL = f'{self.BASE_URL}/findLogisticsTrack'
         self.DETAIL_URL = f'{self.BASE_URL}/getFirstLegOrderDetail'
-        self.CACHE_FILE = 'niuku_token_cache.json'
+        cache_key = self._safe_cache_key(self.account_key)
+        self.CACHE_FILE = kwargs.get('cache_file') or f'niuku_token_cache_{cache_key}.json'
+
+    @staticmethod
+    def _safe_cache_key(value):
+        return re.sub(r'[^A-Za-z0-9_.-]+', '_', str(value)).strip('_') or 'default'
 
     def _get_cached_token(self):
         """获取本地缓存的 Token"""
         if not os.path.exists(self.CACHE_FILE):
             return None, 0
         try:
-            with open(self.CACHE_FILE, 'r') as f:
+            with open(self.CACHE_FILE, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 return data.get('token'), data.get('timestamp', 0)
         except:
@@ -41,7 +47,7 @@ class NiuKuSpider(BaseSpider):
 
     def _cache_token(self, token):
         """缓存 Token 到本地"""
-        with open(self.CACHE_FILE, 'w') as f:
+        with open(self.CACHE_FILE, 'w', encoding='utf-8') as f:
             json.dump({'token': token, 'timestamp': int(time.time())}, f)
 
     def needs_browser(self) -> bool:
@@ -53,11 +59,11 @@ class NiuKuSpider(BaseSpider):
         token, ts = self._get_cached_token()
         if token and (time.time() - ts) < 24 * 60 * 60:
             self.token = token
-            logger.info("使用纽酷缓存 Token 成功")
+            logger.info("使用纽酷账号 [%s] 缓存 Token 成功", self.account_key)
             self.is_logged_in = True
-            return
+            return True
 
-        logger.info(f"正在登录纽酷账号: {self.username}")
+        logger.info("正在登录纽酷账号 [%s]: %s", self.account_key, self.username)
         try:
             # 纽酷接口对请求头有时有校验，建议补全
             headers = {'Content-Type': 'application/json'}
@@ -75,16 +81,19 @@ class NiuKuSpider(BaseSpider):
                 if not self.token:
                     logger.error(f"登录响应成功但未找到 Token: {data}")
                     self.is_logged_in = False
-                    return
+                    return False
                 self._cache_token(self.token)
-                logger.info("纽酷登录成功并缓存 Token")
+                logger.info("纽酷账号 [%s] 登录成功并缓存 Token", self.account_key)
                 self.is_logged_in = True
+                return True
             else:
                 logger.error(f"纽酷登录失败。响应内容: {data}")
                 self.is_logged_in = False
+                return False
         except Exception as e:
             logger.error(f"纽酷登录接口异常: {e}")
             self.is_logged_in = False
+            return False
     def search(self, tracking_no):
         """
         执行查询逻辑

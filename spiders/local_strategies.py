@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class LocalExcelStrategy(BaseSpider):
-    """本地 Excel 策略类：用于辰舟、欧杰等货代的数据查询
+    """本地 Excel 策略类：用于辰舟货代的数据查询
     直接读取本地 Excel 文件，通过 FBA ID 或发货 ID 进行匹配
     不使用浏览器，不需要登录
     """
@@ -78,8 +78,7 @@ class LocalExcelStrategy(BaseSpider):
         
         matched_row = None
 
-        # === 1. 定义不同货代的匹配列名优先级 ===
-        # 根据你提供的欧杰文件，FBA列名为 'FBA单号'，发货ID为 '客户单号（发货ID）'
+        # === 1. 定义本地 Excel 的匹配列名优先级 ===
         fba_cols = ['FBA单号']
         ship_cols = ['客户单号（发货ID）']
 
@@ -121,26 +120,17 @@ class LocalExcelStrategy(BaseSpider):
         voyage_info = ""
         is_inspected = False
         
-        # === 辰舟 (Chenzhou) 解析逻辑 ===
-        if self.forwarder_name == "辰舟":
-            # 1. 映射列名
-            latest_info = str(row.get('货物状态备注', ''))
-            sail_time = self._clean_date(row.get('开船时间'))
-            arrive_time = self._clean_date(row.get('到港时间'))
-            if self.check_cell_color("唯镜录系统模板", h_cell_address):
-                sign_time = self._clean_date(row.get('妥投时间'))
-            if latest_info:
-                latest_info = latest_info+'————（'+datetime.now().strftime('%Y-%m-%d')+'）'
+        if self.forwarder_name != "辰舟":
+            return None
 
-        # === 欧杰 (Oujie) 解析逻辑 (根据你的新需求修改) ===
-        elif self.forwarder_name == "欧杰":
-            # 1. 映射列名
-            latest_info = str(row.get('货物状态备注', ''))
-            sail_time = self._clean_date(row.get('开船时间'))
-            arrive_time = self._clean_date(row.get('到港时间'))
+        # === 辰舟解析逻辑 ===
+        latest_info = str(row.get('货物状态备注', ''))
+        sail_time = self._clean_date(row.get('开船时间'))
+        arrive_time = self._clean_date(row.get('到港时间'))
+        if self.check_cell_color("唯镜录系统模板", h_cell_address):
             sign_time = self._clean_date(row.get('妥投时间'))
-            if latest_info:
-                latest_info = latest_info+'————（'+datetime.now().strftime('%Y-%m-%d')+'）'
+        if latest_info:
+            latest_info = latest_info+'————（'+datetime.now().strftime('%Y-%m-%d')+'）'
             
         # 提取船名航次 (Voyage Info)
         voyage_info = ""
@@ -258,11 +248,6 @@ def main():
     test_task = {'shipment_id': '260311G-5'}
     
     # 打印结果
-    print(app.search_order(test_task))
-
-    real_file_path = r"C:\Users\25a04\Desktop\货代更新\【唯镜】物流状态更新模版——欧杰.xlsx" 
-    app = LocalExcelStrategy(real_file_path, "欧杰", sheet_name=0)
-    test_task = {'fba_id': 'FBA15L75F355'}
     print(app.search_order(test_task))
 
 if __name__ == "__main__":

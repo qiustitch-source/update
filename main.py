@@ -13,7 +13,7 @@ from playwright.sync_api import sync_playwright
 from database import init_db, batch_upsert_shipments, get_pending_tasks, update_tracking_info
 from config import (
     CREDENTIALS, DINGTALK_CONFIG, MANAGER_MAPPING,
-    US_SITE_MANAGER, FILE_PATHS
+    US_SITE_MANAGER, FILE_PATHS, NIUKU_ACCOUNTS
 )
 from excel_handler import read_and_update_excel
 from notice import DingTalkRobot
@@ -24,6 +24,7 @@ from spiders.junglebird import JungleBirdSpider
 from spiders.xinda import XinDaSpider
 from spiders.yipai import YiPaiSpider
 from spiders.niuku import NiuKuSpider
+from spiders.niuku_accounts import query_niuku_with_accounts
 from spiders.lianyu import LianyuSpider
 from spiders.local_strategies import LocalExcelStrategy
 
@@ -112,14 +113,12 @@ def load_excel_to_db(file_path):
 
 def create_spider(fw_name, **kwargs):
     """工厂函数：根据货代名称创建对应的爬虫实例"""
-    # 特殊处理：辰舟/欧杰使用本地 Excel 策略
-    if fw_name in ['辰舟', '欧杰']:
-        config_key = 'chenzhou' if fw_name == '辰舟' else 'oujie'
-        sheet_idx = 1 if fw_name == '辰舟' else 0
+    # 特殊处理：辰舟使用本地 Excel 策略
+    if fw_name == '辰舟':
         return LocalExcelStrategy(
-            file_path=FILE_PATHS[config_key],
+            file_path=FILE_PATHS['chenzhou'],
             forwarder_name=fw_name,
-            sheet_name=sheet_idx
+            sheet_name=1
         )
 
     # 其他货代从 SPIDER_FACTORY 中获取
@@ -169,12 +168,60 @@ def log_tracking_result(fw_name, task, result):
     logger.info("当前状态：%s", result.get('status') or "")
 
 
+def process_niuku_tasks(fw_name, fw_tasks, bot=None):
+    """纽酷多账号查询：主账号优先，查不到有效物流再尝试备用账号。"""
+    if not NIUKU_ACCOUNTS:
+        logger.warning("未配置纽酷账号，跳过 %s 个纽酷任务。", len(fw_tasks))
+        return
+
+    spider_cache = {}
+
+    def get_spider(account_config):
+        account_key = account_config.get("key") or account_config.get("user") or "unknown"
+        if account_key not in spider_cache:
+            spider_cache[account_key] = create_spider(
+                fw_name,
+                page=None,
+                username=account_config.get("user") or "",
+                password=account_config.get("pwd") or "",
+                account_key=account_key,
+            )
+        return spider_cache[account_key]
+
+    for task in fw_tasks:
+        result, account = query_niuku_with_accounts(
+            task['tracking_no'],
+            NIUKU_ACCOUNTS,
+            get_spider,
+            logger=logger,
+        )
+
+        if result:
+            account_key = account.get("key") if account else "unknown"
+            logger.info(
+                "[%s] 发货ID：%s | 运单号：%s | 命中账号：%s",
+                fw_name,
+                task_value(task, 'shipment_id'),
+                task_value(task, 'tracking_no'),
+                account_key,
+            )
+            log_tracking_result(fw_name, task, result)
+            update_tracking_info(task['shipment_id'], result, bot=bot)
+        else:
+            logger.warning(
+                "[%s] 发货ID：%s | 运单号：%s 在所有纽酷账号中均未查询到有效物流",
+                fw_name,
+                task_value(task, 'shipment_id'),
+                task_value(task, 'tracking_no'),
+            )
+
+
 def process_crawlers(bot=None):
     """使用工厂模式的核心爬虫调度逻辑
     1. 从数据库获取待处理任务（未签收且有货运单号）
     2. 按货代名称分组
     3. 对每组任务：
-       - 辰舟/欧杰：使用本地 Excel 策略，传入 task_info 字典
+       - 辰舟：使用本地 Excel 策略，传入 task_info 字典
        - 其他：使用统一接口，传入 tracking_no 字符串
     4. 每个查询结果更新到数据库
     """
@@ -197,6 +244,10 @@ def process_crawlers(bot=None):
             log_forwarder_section(fw_name, len(fw_tasks))
 
             try:
+                if fw_name == '纽酷':
+                    process_niuku_tasks(fw_name, fw_tasks, bot=bot)
+                    continue
+
                 # 获取凭证
                 cred = CREDENTIALS.get(fw_name, {})
                 username = cred.get('user') or ""
@@ -229,7 +280,7 @@ def process_crawlers(bot=None):
 
                 # 统一的查询循环
                 for task in fw_tasks:
-                    if fw_name in ['辰舟', '欧杰']:
+                    if fw_name == '辰舟':
                         # 本地 Excel 策略：传入 task_info 字典
                         result = spider.search_order(task)
                     else:

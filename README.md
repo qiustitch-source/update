@@ -4,7 +4,7 @@
 
 ## 功能特性
 
-- **多货代支持**：覆盖 9 家货代，包含网页爬取、API 调用、本地 Excel 三种数据获取方式
+- **多货代支持**：覆盖 8 家货代，包含网页爬取、API 调用、本地 Excel 三种数据获取方式
 - **自动状态更新**：爬取完整路径、最新路径、船名航次、开船、到港、签收、查验等关键字段
 - **旧表对比**：对比旧发货流程表中的最新状态，记录变化字段和写入字段
 - **异常检测**：自动识别延期（>5 天）、查验、延误三类异常
@@ -23,7 +23,6 @@
 | 联宇 / 联宇物流 | 网页爬取 | Playwright（坤云平台） |
 | 纽酷 | REST API | HTTP + JWT Token 缓存 |
 | 辰舟 | 本地 Excel | openpyxl + 背景色判断 |
-| 欧杰 | 本地 Excel | openpyxl |
 
 ## 技术栈
 
@@ -33,7 +32,6 @@
 - pandas + openpyxl
 - 钉钉机器人 API
 - requests
-- pywinauto + pyautogui
 
 ## 项目结构
 
@@ -44,7 +42,6 @@ updata_Logistics/
 ├── database.py               # 数据库操作（建表、查询、更新）
 ├── excel_handler.py          # Excel 读写
 ├── notice.py                 # 钉钉机器人消息推送
-├── dingtalk_automation.py    # 钉钉桌面自动化（上传/下载文件）
 ├── requirements.txt          # 依赖清单
 ├── docs/                     # 项目文档
 └── spiders/
@@ -56,7 +53,7 @@ updata_Logistics/
     ├── yipai.py              # 易派
     ├── lianyu.py             # 联宇
     ├── niuku.py              # 纽酷（API 模式）
-    └── local_strategies.py   # 辰舟/欧杰（本地 Excel）
+    └── local_strategies.py   # 辰舟（本地 Excel）
 ```
 
 ## 快速开始
@@ -85,7 +82,6 @@ DINGTALK_ROBOT_CODE=your_robot_code
 
 MAIN_EXCEL_PATH=D:\path\to\发货数据详情.xlsx
 CHENZHOU_FILE_PATH=D:\path\to\辰舟.xlsx
-OUJIE_FILE_PATH=D:\path\to\欧杰.xlsx
 
 MANAGER_MAPPING={"张三":"user_id_1","李四":"user_id_2"}
 US_SITE_MANAGER=["user_id_1"]
@@ -142,7 +138,7 @@ python main.py
 
 - `docs/01_项目概述与业务背景.md`：业务背景和货代列表
 - `docs/02_项目逻辑分析.md`：主流程、数据库模型和爬虫策略
-- `docs/03_需求文档.md`：需求说明
+- `docs/03_需求文档.md`：PRD 与流程图
 - `docs/联宇获取物流流程.docx`：联宇平台流程记录
 
 ## License
